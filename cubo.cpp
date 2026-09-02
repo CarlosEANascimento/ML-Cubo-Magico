@@ -41,7 +41,15 @@ struct Color {
 };
 
 struct CubeSection {
-	Coord3d center;
+	Coord3d v0;
+	Coord3d v1;
+	Coord3d v2;
+	Coord3d v3;
+	Coord3d v4;
+	Coord3d v5;
+	Coord3d v6;
+	Coord3d v7;
+
 	Color left;
 	Color right;
 	Color top;
@@ -154,6 +162,12 @@ std::array<Coord3d, 8> calcCubeVertex(Coord3d center, float size) {
 	};
 }
 
+// movimentos do cubo
+void lMoviment(std::array<CubeSection, 8> &cube) {
+	// mexe com 0, 2, 4, 6
+
+}
+
 // interações com o teclado
 void processInput (GLFWwindow* window) {
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
@@ -244,50 +258,57 @@ void drawCartesianPlanLabels () {
 }
 
 void drawCubeSection (CubeSection cube) {
-	auto vertex = calcCubeVertex(cube.center, N);
+	Coord3d v0 = cube.v0;
+	Coord3d v1 = cube.v1;
+	Coord3d v2 = cube.v2;
+	Coord3d v3 = cube.v3;
+	Coord3d v4 = cube.v4;
+	Coord3d v5 = cube.v5;
+	Coord3d v6 = cube.v6;
+	Coord3d v7 = cube.v7;
 
 	glBegin(GL_QUADS);
 	// left
 	glColor3f(cube.left.r, cube.left.g, cube.left.b);
-		glVertex3f(vertex[4].x, vertex[4].y, vertex[4].z);
-		glVertex3f(vertex[6].x, vertex[6].y, vertex[6].z);
-		glVertex3f(vertex[2].x, vertex[2].y, vertex[2].z);
-		glVertex3f(vertex[0].x, vertex[0].y, vertex[0].z);
+		glVertex3f(v4.x, v4.y, v4.z);
+		glVertex3f(v6.x, v6.y, v6.z);
+		glVertex3f(v2.x, v2.y, v2.z);
+		glVertex3f(v0.x, v0.y, v0.z);
 
 	// right
 	glColor3f(cube.right.r, cube.right.g, cube.right.b);
-		glVertex3f(vertex[5].x, vertex[5].y, vertex[5].z);
-		glVertex3f(vertex[7].x, vertex[7].y, vertex[7].z);
-		glVertex3f(vertex[3].x, vertex[3].y, vertex[3].z);
-		glVertex3f(vertex[1].x, vertex[1].y, vertex[1].z);
+		glVertex3f(v5.x, v5.y, v5.z);
+		glVertex3f(v7.x, v7.y, v7.z);
+		glVertex3f(v3.x, v3.y, v3.z);
+		glVertex3f(v1.x, v1.y, v1.z);
 
 	// top
 	glColor3f(cube.top.r, cube.top.g, cube.top.b);
-		glVertex3f(vertex[0].x, vertex[0].y, vertex[0].z);
-		glVertex3f(vertex[2].x, vertex[2].y, vertex[2].z);
-		glVertex3f(vertex[3].x, vertex[3].y, vertex[3].z);
-		glVertex3f(vertex[1].x, vertex[1].y, vertex[1].z);
+		glVertex3f(v0.x, v0.y, v0.z);
+		glVertex3f(v2.x, v2.y, v2.z);
+		glVertex3f(v3.x, v3.y, v3.z);
+		glVertex3f(v1.x, v1.y, v1.z);
 
 	// bot
 	glColor3f(cube.bottom.r, cube.bottom.g, cube.bottom.b);
-		glVertex3f(vertex[4].x, vertex[4].y, vertex[4].z);
-		glVertex3f(vertex[5].x, vertex[5].y, vertex[5].z);
-		glVertex3f(vertex[7].x, vertex[7].y, vertex[7].z);
-		glVertex3f(vertex[6].x, vertex[6].y, vertex[6].z);
+		glVertex3f(v4.x, v4.y, v4.z);
+		glVertex3f(v5.x, v5.y, v5.z);
+		glVertex3f(v7.x, v7.y, v7.z);
+		glVertex3f(v6.x, v6.y, v6.z);
 
 	// front 
 	glColor3f(cube.front.r, cube.front.g, cube.front.b);
-		glVertex3f(vertex[2].x, vertex[2].y, vertex[2].z);
-		glVertex3f(vertex[6].x, vertex[6].y, vertex[6].z);
-		glVertex3f(vertex[7].x, vertex[7].y, vertex[7].z);
-		glVertex3f(vertex[3].x, vertex[3].y, vertex[3].z);
+		glVertex3f(v2.x, v2.y, v2.z);
+		glVertex3f(v6.x, v6.y, v6.z);
+		glVertex3f(v7.x, v7.y, v7.z);
+		glVertex3f(v3.x, v3.y, v3.z);
 
 	// back
 	glColor3f(cube.back.r, cube.back.g, cube.back.b);
-		glVertex3f(vertex[0].x, vertex[0].y, vertex[0].z);
-		glVertex3f(vertex[4].x, vertex[4].y, vertex[4].z);
-		glVertex3f(vertex[5].x, vertex[5].y, vertex[5].z);
-		glVertex3f(vertex[1].x, vertex[1].y, vertex[1].z);
+		glVertex3f(v0.x, v0.y, v0.z);
+		glVertex3f(v4.x, v4.y, v4.z);
+		glVertex3f(v5.x, v5.y, v5.z);
+		glVertex3f(v1.x, v1.y, v1.z);
 	glEnd();
 
 	// contorno
@@ -295,56 +316,56 @@ void drawCubeSection (CubeSection cube) {
 	glBegin(GL_LINES);
 	glColor3f(1.0f, 1.0f, 1.0f);
 		//1
-		glVertex3f(vertex[0].x, vertex[0].y, vertex[0].z);
-		glVertex3f(vertex[2].x, vertex[2].y, vertex[2].z);
+		glVertex3f(v0.x, v0.y, v0.z);
+		glVertex3f(v2.x, v2.y, v2.z);
 
-		glVertex3f(vertex[2].x, vertex[2].y, vertex[2].z);
-		glVertex3f(vertex[6].x, vertex[6].y, vertex[6].z);
+		glVertex3f(v2.x, v2.y, v2.z);
+		glVertex3f(v6.x, v6.y, v6.z);
 
-		glVertex3f(vertex[6].x, vertex[6].y, vertex[6].z);
-		glVertex3f(vertex[4].x, vertex[4].y, vertex[4].z);
+		glVertex3f(v6.x, v6.y, v6.z);
+		glVertex3f(v4.x, v4.y, v4.z);
 
-		glVertex3f(vertex[4].x, vertex[4].y, vertex[4].z);
-		glVertex3f(vertex[0].x, vertex[0].y, vertex[0].z);
+		glVertex3f(v4.x, v4.y, v4.z);
+		glVertex3f(v0.x, v0.y, v0.z);
 
 		//2
-		glVertex3f(vertex[0].x, vertex[0].y, vertex[0].z);
-		glVertex3f(vertex[1].x, vertex[1].y, vertex[1].z);
+		glVertex3f(v0.x, v0.y, v0.z);
+		glVertex3f(v1.x, v1.y, v1.z);
 
-		glVertex3f(vertex[1].x, vertex[1].y, vertex[1].z);
-		glVertex3f(vertex[5].x, vertex[5].y, vertex[5].z);
+		glVertex3f(v1.x, v1.y, v1.z);
+		glVertex3f(v5.x, v5.y, v5.z);
 
-		glVertex3f(vertex[5].x, vertex[5].y, vertex[5].z);
-		glVertex3f(vertex[4].x, vertex[4].y, vertex[4].z);
+		glVertex3f(v5.x, v5.y, v5.z);
+		glVertex3f(v4.x, v4.y, v4.z);
 
-		glVertex3f(vertex[4].x, vertex[4].y, vertex[4].z);
-		glVertex3f(vertex[0].x, vertex[0].y, vertex[0].z);
+		glVertex3f(v4.x, v4.y, v4.z);
+		glVertex3f(v0.x, v0.y, v0.z);
 
 		//3
-		glVertex3f(vertex[1].x, vertex[1].y, vertex[1].z);
-		glVertex3f(vertex[5].x, vertex[5].y, vertex[5].z);
+		glVertex3f(v1.x, v1.y, v1.z);
+		glVertex3f(v5.x, v5.y, v5.z);
 
-		glVertex3f(vertex[5].x, vertex[5].y, vertex[5].z);
-		glVertex3f(vertex[7].x, vertex[7].y, vertex[7].z);
+		glVertex3f(v5.x, v5.y, v5.z);
+		glVertex3f(v7.x, v7.y, v7.z);
 
-		glVertex3f(vertex[7].x, vertex[7].y, vertex[7].z);
-		glVertex3f(vertex[3].x, vertex[3].y, vertex[3].z);
+		glVertex3f(v7.x, v7.y, v7.z);
+		glVertex3f(v3.x, v3.y, v3.z);
 
-		glVertex3f(vertex[3].x, vertex[3].y, vertex[3].z);
-		glVertex3f(vertex[1].x, vertex[1].y, vertex[1].z);
+		glVertex3f(v3.x, v3.y, v3.z);
+		glVertex3f(v1.x, v1.y, v1.z);
 
 		//4
-		glVertex3f(vertex[3].x, vertex[3].y, vertex[3].z);
-		glVertex3f(vertex[7].x, vertex[7].y, vertex[7].z);
+		glVertex3f(v3.x, v3.y, v3.z);
+		glVertex3f(v7.x, v7.y, v7.z);
 
-		glVertex3f(vertex[7].x, vertex[7].y, vertex[7].z);
-		glVertex3f(vertex[6].x, vertex[6].y, vertex[6].z);
+		glVertex3f(v7.x, v7.y, v7.z);
+		glVertex3f(v6.x, v6.y, v6.z);
 
-		glVertex3f(vertex[6].x, vertex[6].y, vertex[6].z);
-		glVertex3f(vertex[2].x, vertex[2].y, vertex[2].z);
+		glVertex3f(v6.x, v6.y, v6.z);
+		glVertex3f(v2.x, v2.y, v2.z);
 
-		glVertex3f(vertex[2].x, vertex[2].y, vertex[2].z);
-		glVertex3f(vertex[3].x, vertex[3].y, vertex[3].z);
+		glVertex3f(v2.x, v2.y, v2.z);
+		glVertex3f(v3.x, v3.y, v3.z);
 	glEnd();
 }
 
@@ -388,15 +409,109 @@ int main() {
 
 	// isso aqui me dá o centroide de cada um dos pequenos cubos
 	auto sectionsCenter = calcCubeVertex(cubeOrigem, N);
+	auto cubeVertexes = calcCubeVertex(sectionsCenter[0], N);
 
-	cube[0] = {sectionsCenter[0], orange, gray, white, gray, gray, blue};
-	cube[1] = {sectionsCenter[1], gray, red, white, gray, gray, blue};
-	cube[2] = {sectionsCenter[2], orange, gray, white, gray, green, gray};
-	cube[3] = {sectionsCenter[3], gray, red, white, gray, green, gray};
-	cube[4] = {sectionsCenter[4], orange, gray, gray, yellow, gray, blue};
-	cube[5] = {sectionsCenter[5], gray, red, gray, yellow, gray, blue};
-	cube[6] = {sectionsCenter[6], orange, gray, gray, yellow, green, gray};
-	cube[7] = {sectionsCenter[7], gray, red, gray, yellow, green, gray};
+	cube[0] = {
+		cubeVertexes[0],
+		cubeVertexes[1],
+		cubeVertexes[2],
+		cubeVertexes[3],
+		cubeVertexes[4],
+		cubeVertexes[5],
+		cubeVertexes[6],
+		cubeVertexes[7],
+		orange, gray, white, gray, gray, blue};
+
+	cubeVertexes = calcCubeVertex(sectionsCenter[1], N);
+	
+	cube[1] = {
+		cubeVertexes[0],
+		cubeVertexes[1],
+		cubeVertexes[2],
+		cubeVertexes[3],
+		cubeVertexes[4],
+		cubeVertexes[5],
+		cubeVertexes[6],
+		cubeVertexes[7],
+		gray, red, white, gray, gray, blue};
+
+	cubeVertexes = calcCubeVertex(sectionsCenter[2], N);
+	
+	cube[2] = {
+		cubeVertexes[0],
+		cubeVertexes[1],
+		cubeVertexes[2],
+		cubeVertexes[3],
+		cubeVertexes[4],
+		cubeVertexes[5],
+		cubeVertexes[6],
+		cubeVertexes[7],
+		orange, gray, white, gray, green, gray};
+
+	cubeVertexes = calcCubeVertex(sectionsCenter[3], N);
+	
+	cube[3] = {
+		cubeVertexes[0],
+		cubeVertexes[1],
+		cubeVertexes[2],
+		cubeVertexes[3],
+		cubeVertexes[4],
+		cubeVertexes[5],
+		cubeVertexes[6],
+		cubeVertexes[7],
+		gray, red, white, gray, green, gray};
+
+	cubeVertexes = calcCubeVertex(sectionsCenter[4], N);
+
+	cube[4] = {
+		cubeVertexes[0],
+		cubeVertexes[1],
+		cubeVertexes[2],
+		cubeVertexes[3],
+		cubeVertexes[4],
+		cubeVertexes[5],
+		cubeVertexes[6],
+		cubeVertexes[7],
+		orange, gray, gray, yellow, gray, blue};
+
+	cubeVertexes = calcCubeVertex(sectionsCenter[5], N);
+
+	cube[5] = {
+		cubeVertexes[0],
+		cubeVertexes[1],
+		cubeVertexes[2],
+		cubeVertexes[3],
+		cubeVertexes[4],
+		cubeVertexes[5],
+		cubeVertexes[6],
+		cubeVertexes[7],
+		gray, red, gray, yellow, gray, blue};
+
+	cubeVertexes = calcCubeVertex(sectionsCenter[6], N);
+
+	cube[6] = {
+		cubeVertexes[0],
+		cubeVertexes[1],
+		cubeVertexes[2],
+		cubeVertexes[3],
+		cubeVertexes[4],
+		cubeVertexes[5],
+		cubeVertexes[6],
+		cubeVertexes[7],
+		orange, gray, gray, yellow, green, gray};
+
+	cubeVertexes = calcCubeVertex(sectionsCenter[7], N);
+
+	cube[7] = {
+		cubeVertexes[0],
+		cubeVertexes[1],
+		cubeVertexes[2],
+		cubeVertexes[3],
+		cubeVertexes[4],
+		cubeVertexes[5],
+		cubeVertexes[6],
+		cubeVertexes[7],
+		gray, red, gray, yellow, green, gray};
 
 	if (!glfwInit()) {
 		std::cerr << "Falha ao inicializar o GLFW" << std::endl;
