@@ -1,22 +1,33 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <array>
+#include <functional>
+#include <cmath>
+#include <utility>
 
 #include "external/imgui/imgui.h"
 #include "external/imgui/backends/imgui_impl_glfw.h"
 #include "external/imgui/backends/imgui_impl_opengl3.h"
 
 // constantes
-constexpr float N = 1.0f;
-constexpr unsigned int SCR_WIDTH = 800;
-constexpr unsigned int SCR_HEIGTH = 600;
+const float N = 1.0f;
+const unsigned int SCR_WIDTH = 800;
+const unsigned int SCR_HEIGTH = 600;
 
-constexpr int L = 0;	// 0 para, -1 L', 1 L
-constexpr int R = 0;	// equivalentes
-constexpr int U = 0;
-constexpr int D = 0;
-constexpr int F = 0;
-constexpr int B = 0;
+constexpr float PI = 3.14159265f;
+
+const float raio1 = N;
+const float raio2 = std::sqrt(std::pow(raio1, 2.0f) + std::pow(raio1, 2.0f));
+
+int L = 0;	// 0 para, -1 L', 1 L
+int R = 0;	// equivalentes
+int U = 0;
+int D = 0;
+int F = 0;
+int B = 0;
+
+float theta = 0.0f;
+float amountOfRotation = 0.0f;
 
 // structs
 struct CamState {
@@ -112,7 +123,7 @@ void scrollCallback (GLFWwindow* window, double xOffset, double yOffset) {
 
 // utilitários
 
-// IA fez -> basicamente projetado 1 ponto do plano 3d no plano 2d da tela
+// IA fez -> basicamente projeta 1 ponto do plano 3d renderizado, no plano 2d da janela
 ImVec2 worldToScreen(float x, float y, float z) {
     float modelview[16], projection[16];
     int viewport[4];
@@ -163,10 +174,6 @@ std::array<Coord3d, 8> calcCubeVertex(Coord3d center, float size) {
 }
 
 // movimentos do cubo
-void lMoviment(std::array<CubeSection, 8> &cube) {
-	// mexe com 0, 2, 4, 6
-
-}
 
 // interações com o teclado
 void processInput (GLFWwindow* window) {
@@ -175,38 +182,38 @@ void processInput (GLFWwindow* window) {
 	}
 }
 
-void rubiksInteractions (GLFWwindow* window, const std::array<Coord3d, 8> &coords) {
-    if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS) {
+void rubiksInteractions (GLFWwindow* window, std::array<CubeSection, 8> &cube) {
+    if (L == 0 && glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS) {
+        if (glfwGetKey(window, GLFW_KEY_UP)) {
+			L = 1;
+        } else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
+			L = -1;
+        }
+    } else if (R == 0 && glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
         if (glfwGetKey(window, GLFW_KEY_UP)) {
 			std::cout << "teste";
         } else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
 			std::cout << "teste";
         }
-    } else if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
-        if (glfwGetKey(window, GLFW_KEY_UP)) {
-			std::cout << "teste";
-        } else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
-			std::cout << "teste";
-        }
-    } else if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS) {
+    } else if (U == 0 && glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS) {
         if (glfwGetKey(window, GLFW_KEY_LEFT)) {
 			std::cout << "teste";
         } else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
 			std::cout << "teste";
         }
-    } else if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+    } else if (D == 0 && glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
         if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
 			std::cout << "teste";
         } else if (glfwGetKey(window, GLFW_KEY_LEFT)) {
 			std::cout << "teste";
         }
-    } else if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS) {
+    } else if (F == 0 && glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS) {
         if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
 			std::cout << "teste";
         } else if (glfwGetKey(window, GLFW_KEY_LEFT)) {
 			std::cout << "teste";
         }
-    } else if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS) {
+    } else if (B == 0 && glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS) {
         if (glfwGetKey(window, GLFW_KEY_LEFT)) {
 			std::cout << "teste";
         } else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
@@ -367,6 +374,28 @@ void drawCubeSection (CubeSection cube) {
 		glVertex3f(v2.x, v2.y, v2.z);
 		glVertex3f(v3.x, v3.y, v3.z);
 	glEnd();
+
+	// debug
+
+	ImVec2 v0Label = worldToScreen( v0.x, v0.y, v0.z );
+	ImVec2 v1Label = worldToScreen( v1.x, v1.y, v1.z );
+	ImVec2 v2Label = worldToScreen( v2.x, v2.y, v2.z );
+	ImVec2 v3Label = worldToScreen( v3.x, v3.y, v3.z );
+	ImVec2 v4Label = worldToScreen( v4.x, v4.y, v4.z );
+	ImVec2 v5Label = worldToScreen( v5.x, v5.y, v5.z );
+	ImVec2 v6Label = worldToScreen( v6.x, v6.y, v6.z );
+	ImVec2 v7Label = worldToScreen( v7.x, v7.y, v7.z );
+
+	ImDrawList* draw = ImGui::GetForegroundDrawList();
+
+	draw->AddText(v0Label, ImColor(0, 250, 229), "0");
+	draw->AddText(v1Label, ImColor(0, 250, 229), "1");
+	draw->AddText(v2Label, ImColor(0, 250, 229), "2");
+	draw->AddText(v3Label, ImColor(0, 250, 229), "3");
+	draw->AddText(v4Label, ImColor(0, 250, 229), "4");
+	draw->AddText(v5Label, ImColor(0, 250, 229), "5");
+	draw->AddText(v6Label, ImColor(0, 250, 229), "6");
+	draw->AddText(v7Label, ImColor(0, 250, 229), "7");
 }
 
 void drawRubiks (std::array<CubeSection, 8> &cubes) {
@@ -380,21 +409,149 @@ void drawRubiks (std::array<CubeSection, 8> &cubes) {
 	drawCubeSection(cubes[7]);
 }
 
-void drawInfosGUI () {
+void drawInfosGUI (
+	std::array<CubeSection*, 4> uSection,
+	std::array<CubeSection*, 4> dSection,
+	std::array<CubeSection*, 4> rSection,
+	std::array<CubeSection*, 4> lSection,
+	std::array<CubeSection*, 4> fSection,
+	std::array<CubeSection*, 4> bSection
+) {
 	ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiCond_Always);
 	ImGui::Begin("TextoFixo", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground);
 	ImGui::Text("Cubo Mágico (Arraste com o Mouse)");
 	ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+
+	ImGui::TextColored(ImVec4(uSection[0]->top.r, uSection[0]->top.g, uSection[0]->top.b, 1.0f),"O");
+	ImGui::TextColored(ImVec4(uSection[1]->top.r, uSection[1]->top.g, uSection[1]->top.b, 1.0f),"O");
+	ImGui::TextColored(ImVec4(uSection[2]->top.r, uSection[2]->top.g, uSection[2]->top.b, 1.2f),"O");
+	ImGui::TextColored(ImVec4(uSection[3]->top.r, uSection[3]->top.g, uSection[3]->top.b, 1.0f),"O");
 	ImGui::End();
 }
 
-int main() {
-	float countRotationIntern = 0.0f;
-	float countRotationExtern = 0.0f;
+void rotateX (Coord3d &v, float angle) {
+	float cosA = std::cos(angle);
+	float sinA = std::sin(angle);
+	float previousY = v.y;
+	float previousZ = v.z;
 
+	v.y = previousY * cosA - previousZ * sinA;
+	v.z = previousY * sinA + previousZ * cosA;
+}
+
+void rotateSectionX (CubeSection &cube, float angle) {
+	rotateX(cube.v0, angle);
+	rotateX(cube.v1, angle);
+	rotateX(cube.v2, angle);
+	rotateX(cube.v3, angle);
+	rotateX(cube.v4, angle);
+	rotateX(cube.v5, angle);
+	rotateX(cube.v6, angle);
+	rotateX(cube.v7, angle);
+}
+
+// rotaciona as cores internas de uma peça segundo o movimento L (horário)
+CubeSection rotateColorsL (const CubeSection &piece) {
+	CubeSection p = piece;
+	p.front  = piece.top;   
+	p.bottom = piece.front; 
+	p.back   = piece.bottom;
+	p.top    = piece.back;  
+	return p;
+}
+
+// rotaciona as cores internas de uma peça segundo o movimento L' (anti-horário)
+CubeSection rotateColorsLPrime (const CubeSection &piece) {
+	CubeSection p = piece;
+	p.back   = piece.top;   
+	p.bottom = piece.back;  
+	p.front  = piece.bottom;
+	p.top    = piece.front; 
+	return p;
+}
+
+// restaura os vértices canônicos (sem distorção) do slot correspondente
+void resetSlotVertices (CubeSection &sec, int slotIndex) {
+	Coord3d origin = {0.0f, 0.0f, 0.0f};
+	auto centers = calcCubeVertex(origin, N);
+	auto v = calcCubeVertex(centers[slotIndex], N);
+	sec.v0 = v[0];
+	sec.v1 = v[1];
+	sec.v2 = v[2];
+	sec.v3 = v[3];
+	sec.v4 = v[4];
+	sec.v5 = v[5];
+	sec.v6 = v[6];
+	sec.v7 = v[7];
+}
+
+void moveRubiks (
+	std::array<CubeSection*, 4> uSection,
+	std::array<CubeSection*, 4> dSection,
+	std::array<CubeSection*, 4> rSection,
+	std::array<CubeSection*, 4> lSection,
+	std::array<CubeSection*, 4> fSection,
+	std::array<CubeSection*, 4> bSection
+	) {
+
+	float speed = 0.05f;
+
+	if (L != 0) {
+		float step = speed * L;
+
+		for (auto* cube:lSection) {
+			rotateSectionX(*cube, step);
+		}
+
+		amountOfRotation += std::abs(step);
+
+		if (amountOfRotation >= (PI/2.0f)) {
+			if (L == 1) {
+				CubeSection old0 = *lSection[0];
+				CubeSection old2 = *lSection[1];
+				CubeSection old6 = *lSection[2];
+				CubeSection old4 = *lSection[3];
+
+				*lSection[0] = rotateColorsL(old4);
+				*lSection[3] = rotateColorsL(old6);
+				*lSection[2] = rotateColorsL(old2);
+				*lSection[1] = rotateColorsL(old0);
+			} else if (L == -1) {
+				CubeSection old0 = *lSection[0];
+				CubeSection old2 = *lSection[1];
+				CubeSection old6 = *lSection[2];
+				CubeSection old4 = *lSection[3];
+
+				*lSection[0] = rotateColorsLPrime(old2);
+				*lSection[1] = rotateColorsLPrime(old6);
+				*lSection[2] = rotateColorsLPrime(old4);
+				*lSection[3] = rotateColorsLPrime(old0);
+			}
+
+			resetSlotVertices(*lSection[0], 0);
+			resetSlotVertices(*lSection[1], 2);
+			resetSlotVertices(*lSection[2], 6);
+			resetSlotVertices(*lSection[3], 4);
+
+			L = 0;
+			amountOfRotation = 0.0f;
+		}
+	}
+}
+
+int main() {
 	CamState cam;
 	Coord3d cubeOrigem;
 	std::array<CubeSection, 8> cube;
+	
+	std::array<CubeSection*, 4> uSection = {&cube[0], &cube[2], &cube[3], &cube[1]};
+	std::array<CubeSection*, 4> dSection = {&cube[4], &cube[6], &cube[7], &cube[5]};
+
+	std::array<CubeSection*, 4> rSection = {&cube[1], &cube[3], &cube[7], &cube[5]};
+	std::array<CubeSection*, 4> lSection = {&cube[0], &cube[2], &cube[6], &cube[4]};
+
+	std::array<CubeSection*, 4> fSection = {&cube[3], &cube[2], &cube[6], &cube[7]};
+	std::array<CubeSection*, 4> bSection = {&cube[1], &cube[0], &cube[4], &cube[5]};
 
 	// cores
 	Color red = {1.0f, 0.0f, 0.0f};
@@ -553,8 +710,11 @@ int main() {
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
 
+		moveRubiks(uSection, dSection, rSection, lSection, fSection, bSection);
+
 		// mexer com os inputs
 		processInput(window);
+		rubiksInteractions(window, cube);
 
 		// cria o frame onde o GUI vai ficar
 		ImGui_ImplOpenGL3_NewFrame();
@@ -582,7 +742,7 @@ int main() {
 		drawRubiks(cube);
 
 		drawCartesianPlanLabels();
-		drawInfosGUI();
+		drawInfosGUI(uSection, dSection, rSection, lSection, fSection, bSection);
 
 		// renderizações label & hud
 
