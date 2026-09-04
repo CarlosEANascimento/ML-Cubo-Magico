@@ -79,7 +79,7 @@ void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
 void cursosPosCallback(GLFWwindow* window, double xPos, double yPos) {
     if (ImGui::GetIO().WantCaptureMouse) return;
 
-    float rotationSpeed = 0.3f;
+    float rotationSpeed = 0.5f;
     auto* cam = static_cast<CamState*>(glfwGetWindowUserPointer(window));
 
     // o if cam vai para true se o ponteiro cam aponta para um endereço válido
@@ -183,41 +183,44 @@ void processInput (GLFWwindow* window) {
 }
 
 void rubiksInteractions (GLFWwindow* window, std::array<CubeSection, 8> &cube) {
-    if (L == 0 && glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS) {
+	bool isBusy = (L != 0 || R != 0 || U != 0 || D != 0 || F != 0 || B != 0);
+	if (isBusy) return;
+
+    if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS) {
         if (glfwGetKey(window, GLFW_KEY_UP)) {
 			L = 1;
         } else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
 			L = -1;
         }
-    } else if (R == 0 && glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
+    } else if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
         if (glfwGetKey(window, GLFW_KEY_UP)) {
-			std::cout << "teste";
+			R = 1;
         } else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
-			std::cout << "teste";
+			R = -1;
         }
-    } else if (U == 0 && glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS) {
+    } else if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS) {
         if (glfwGetKey(window, GLFW_KEY_LEFT)) {
-			std::cout << "teste";
+			U = 1;
         } else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
-			std::cout << "teste";
+			U = -1;
         }
-    } else if (D == 0 && glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+    } else if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
         if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
-			std::cout << "teste";
+			D = 1;
         } else if (glfwGetKey(window, GLFW_KEY_LEFT)) {
-			std::cout << "teste";
+			D = -1;
         }
-    } else if (F == 0 && glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS) {
+    } else if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS) {
         if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
-			std::cout << "teste";
+			F = 1;
         } else if (glfwGetKey(window, GLFW_KEY_LEFT)) {
-			std::cout << "teste";
+			F = -1;
         }
-    } else if (B == 0 && glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS) {
+    } else if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS) {
         if (glfwGetKey(window, GLFW_KEY_LEFT)) {
-			std::cout << "teste";
+			B = 1;
         } else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
-			std::cout << "teste";
+			B = -1;
         }
     }
 }
@@ -374,28 +377,6 @@ void drawCubeSection (CubeSection cube) {
 		glVertex3f(v2.x, v2.y, v2.z);
 		glVertex3f(v3.x, v3.y, v3.z);
 	glEnd();
-
-	// debug
-
-	ImVec2 v0Label = worldToScreen( v0.x, v0.y, v0.z );
-	ImVec2 v1Label = worldToScreen( v1.x, v1.y, v1.z );
-	ImVec2 v2Label = worldToScreen( v2.x, v2.y, v2.z );
-	ImVec2 v3Label = worldToScreen( v3.x, v3.y, v3.z );
-	ImVec2 v4Label = worldToScreen( v4.x, v4.y, v4.z );
-	ImVec2 v5Label = worldToScreen( v5.x, v5.y, v5.z );
-	ImVec2 v6Label = worldToScreen( v6.x, v6.y, v6.z );
-	ImVec2 v7Label = worldToScreen( v7.x, v7.y, v7.z );
-
-	ImDrawList* draw = ImGui::GetForegroundDrawList();
-
-	draw->AddText(v0Label, ImColor(0, 250, 229), "0");
-	draw->AddText(v1Label, ImColor(0, 250, 229), "1");
-	draw->AddText(v2Label, ImColor(0, 250, 229), "2");
-	draw->AddText(v3Label, ImColor(0, 250, 229), "3");
-	draw->AddText(v4Label, ImColor(0, 250, 229), "4");
-	draw->AddText(v5Label, ImColor(0, 250, 229), "5");
-	draw->AddText(v6Label, ImColor(0, 250, 229), "6");
-	draw->AddText(v7Label, ImColor(0, 250, 229), "7");
 }
 
 void drawRubiks (std::array<CubeSection, 8> &cubes) {
@@ -418,14 +399,61 @@ void drawInfosGUI (
 	std::array<CubeSection*, 4> bSection
 ) {
 	ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiCond_Always);
-	ImGui::Begin("TextoFixo", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground);
+	ImGui::Begin("TextoFixo", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_AlwaysAutoResize);
 	ImGui::Text("Cubo Mágico (Arraste com o Mouse)");
 	ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
 
-	ImGui::TextColored(ImVec4(uSection[0]->top.r, uSection[0]->top.g, uSection[0]->top.b, 1.0f),"O");
-	ImGui::TextColored(ImVec4(uSection[1]->top.r, uSection[1]->top.g, uSection[1]->top.b, 1.0f),"O");
-	ImGui::TextColored(ImVec4(uSection[2]->top.r, uSection[2]->top.g, uSection[2]->top.b, 1.2f),"O");
-	ImGui::TextColored(ImVec4(uSection[3]->top.r, uSection[3]->top.g, uSection[3]->top.b, 1.0f),"O");
+	ImGui::Text("Para mover R & L: L + seta UP | DOWN; R + seta UP | DOWN");
+	ImGui::Text("Para mover U & D: U + seta RIGHT | LEFT; D + seta RIGHT | LEFT");
+	ImGui::Text("Para mover F & B: F + seta RIGHT | LEFT; B + seta RIGHT | LEFT");
+
+	ImGui::Text("UP FACES");
+	ImGui::TextColored(ImVec4(uSection[3]->top.r, uSection[3]->top.g, uSection[3]->top.b, 1.0f),"[O]");
+	ImGui::SameLine();
+	ImGui::TextColored(ImVec4(uSection[2]->top.r, uSection[2]->top.g, uSection[2]->top.b, 1.0f),"[O]");
+	ImGui::TextColored(ImVec4(uSection[0]->top.r, uSection[0]->top.g, uSection[0]->top.b, 1.0f),"[O]");
+	ImGui::SameLine();
+	ImGui::TextColored(ImVec4(uSection[1]->top.r, uSection[1]->top.g, uSection[1]->top.b, 1.0f),"[O]");
+
+	ImGui::Text("DOWN FACES");
+	ImGui::TextColored(ImVec4(dSection[2]->bottom.r, dSection[2]->bottom.g, dSection[2]->bottom.b, 1.0f),"[O]");
+	ImGui::SameLine();
+	ImGui::TextColored(ImVec4(dSection[3]->bottom.r, dSection[3]->bottom.g, dSection[3]->bottom.b, 1.0f),"[O]");
+	ImGui::TextColored(ImVec4(dSection[1]->bottom.r, dSection[1]->bottom.g, dSection[1]->bottom.b, 1.0f),"[O]");
+	ImGui::SameLine();
+	ImGui::TextColored(ImVec4(dSection[0]->bottom.r, dSection[0]->bottom.g, dSection[0]->bottom.b, 1.0f),"[O]");
+	
+	ImGui::Text("RIGHT FACES");
+	ImGui::TextColored(ImVec4(rSection[1]->right.r, rSection[1]->right.g, rSection[1]->right.b, 1.0f),"[O]");
+	ImGui::SameLine();
+	ImGui::TextColored(ImVec4(rSection[0]->right.r, rSection[0]->right.g, rSection[0]->right.b, 1.0f),"[O]");
+	ImGui::TextColored(ImVec4(rSection[2]->right.r, rSection[2]->right.g, rSection[2]->right.b, 1.0f),"[O]");
+	ImGui::SameLine();
+	ImGui::TextColored(ImVec4(rSection[3]->right.r, rSection[3]->right.g, rSection[3]->right.b, 1.0f),"[O]");
+
+	ImGui::Text("LEFT FACES");
+	ImGui::TextColored(ImVec4(lSection[0]->left.r, lSection[0]->left.g, lSection[0]->left.b, 1.0f),"[O]");
+	ImGui::SameLine();
+	ImGui::TextColored(ImVec4(lSection[1]->left.r, lSection[1]->left.g, lSection[1]->left.b, 1.0f),"[O]");
+	ImGui::TextColored(ImVec4(lSection[3]->left.r, lSection[3]->left.g, lSection[3]->left.b, 1.0f),"[O]");
+	ImGui::SameLine();
+	ImGui::TextColored(ImVec4(lSection[2]->left.r, lSection[2]->left.g, lSection[2]->left.b, 1.0f),"[O]");
+
+	ImGui::Text("FRONT FACES");
+	ImGui::TextColored(ImVec4(fSection[1]->front.r, fSection[1]->front.g, fSection[1]->front.b, 1.0f),"[O]");
+	ImGui::SameLine();
+	ImGui::TextColored(ImVec4(fSection[0]->front.r, fSection[0]->front.g, fSection[0]->front.b, 1.0f),"[O]");
+	ImGui::TextColored(ImVec4(fSection[2]->front.r, fSection[2]->front.g, fSection[2]->front.b, 1.0f),"[O]");
+	ImGui::SameLine();
+	ImGui::TextColored(ImVec4(fSection[3]->front.r, fSection[3]->front.g, fSection[3]->front.b, 1.0f),"[O]");
+
+	ImGui::Text("BACK FACES");
+	ImGui::TextColored(ImVec4(bSection[0]->back.r, bSection[0]->back.g, bSection[0]->back.b, 1.0f),"[O]");
+	ImGui::SameLine();
+	ImGui::TextColored(ImVec4(bSection[1]->back.r, bSection[1]->back.g, bSection[1]->back.b, 1.0f),"[O]");
+	ImGui::TextColored(ImVec4(bSection[3]->back.r, bSection[3]->back.g, bSection[3]->back.b, 1.0f),"[O]");
+	ImGui::SameLine();
+	ImGui::TextColored(ImVec4(bSection[2]->back.r, bSection[2]->back.g, bSection[2]->back.b, 1.0f),"[O]");
 	ImGui::End();
 }
 
@@ -450,6 +478,46 @@ void rotateSectionX (CubeSection &cube, float angle) {
 	rotateX(cube.v7, angle);
 }
 
+void rotateY (Coord3d &v, float angle) {
+	float cosA = std::cos(angle);
+	float sinA = std::sin(angle);
+	float previousX = v.x;
+	float previousZ = v.z;
+	v.x = previousX * cosA - previousZ * sinA;
+	v.z = previousX * sinA + previousZ * cosA;
+}
+
+void rotateSectionY (CubeSection &cube, float angle) {
+	rotateY(cube.v0, angle);
+	rotateY(cube.v1, angle);
+	rotateY(cube.v2, angle);
+	rotateY(cube.v3, angle);
+	rotateY(cube.v4, angle);
+	rotateY(cube.v5, angle);
+	rotateY(cube.v6, angle);
+	rotateY(cube.v7, angle);
+}
+
+void rotateZ (Coord3d &v, float angle) {
+	float cosA = std::cos(angle);
+	float sinA = std::sin(angle);
+	float previousX = v.x;
+	float previousY = v.y;
+	v.x = previousX * cosA + previousY * sinA;
+	v.y = -previousX * sinA + previousY * cosA;
+}
+
+void rotateSectionZ (CubeSection &cube, float angle) {
+	rotateZ(cube.v0, angle);
+	rotateZ(cube.v1, angle);
+	rotateZ(cube.v2, angle);
+	rotateZ(cube.v3, angle);
+	rotateZ(cube.v4, angle);
+	rotateZ(cube.v5, angle);
+	rotateZ(cube.v6, angle);
+	rotateZ(cube.v7, angle);
+}
+
 // rotaciona as cores internas de uma peça segundo o movimento L (horário)
 CubeSection rotateColorsL (const CubeSection &piece) {
 	CubeSection p = piece;
@@ -469,6 +537,58 @@ CubeSection rotateColorsLPrime (const CubeSection &piece) {
 	p.top    = piece.front; 
 	return p;
 }
+
+// R é o inverso de L no eixo X
+CubeSection rotateColorsR (const CubeSection &piece) { return rotateColorsLPrime(piece); }
+CubeSection rotateColorsRPrime (const CubeSection &piece) { return rotateColorsL(piece); }
+
+// rotaciona as cores internas segundo o movimento U (horário)
+CubeSection rotateColorsU (const CubeSection &piece) {
+	CubeSection p = piece;
+	p.right = piece.back; 
+	p.front = piece.right;
+	p.left  = piece.front;
+	p.back  = piece.left; 
+	return p;
+}
+
+// rotaciona as cores internas segundo o movimento U' (anti-horário)
+CubeSection rotateColorsUPrime (const CubeSection &piece) {
+	CubeSection p = piece;
+	p.left  = piece.back; 
+	p.front = piece.left; 
+	p.right = piece.front;
+	p.back  = piece.right;
+	return p;
+}
+
+// D é o inverso de U no eixo Y
+CubeSection rotateColorsD (const CubeSection &piece) { return rotateColorsUPrime(piece); }
+CubeSection rotateColorsDPrime (const CubeSection &piece) { return rotateColorsU(piece); }
+
+// rotaciona as cores internas segundo o movimento F (horário)
+CubeSection rotateColorsF (const CubeSection &piece) {
+	CubeSection p = piece;
+	p.right  = piece.top;   
+	p.bottom = piece.right; 
+	p.left   = piece.bottom;
+	p.top    = piece.left;  
+	return p;
+}
+
+// rotaciona as cores internas segundo o movimento F' (anti-horário)
+CubeSection rotateColorsFPrime (const CubeSection &piece) {
+	CubeSection p = piece;
+	p.left   = piece.top;   
+	p.bottom = piece.left;  
+	p.right  = piece.bottom;
+	p.top    = piece.right; 
+	return p;
+}
+
+// B é o inverso de F no eixo Z
+CubeSection rotateColorsB (const CubeSection &piece) { return rotateColorsFPrime(piece); }
+CubeSection rotateColorsBPrime (const CubeSection &piece) { return rotateColorsF(piece); }
 
 // restaura os vértices canônicos (sem distorção) do slot correspondente
 void resetSlotVertices (CubeSection &sec, int slotIndex) {
@@ -534,6 +654,181 @@ void moveRubiks (
 			resetSlotVertices(*lSection[3], 4);
 
 			L = 0;
+			amountOfRotation = 0.0f;
+		}
+	} else if (R != 0) {
+		float step = speed * R;
+		for (auto* cube:rSection) {
+			rotateSectionX(*cube, -step);
+		}
+		amountOfRotation += std::abs(step);
+		if (amountOfRotation >= (PI/2.0f)) {
+			if (R == 1) {
+				CubeSection old1 = *rSection[0];
+				CubeSection old3 = *rSection[1];
+				CubeSection old7 = *rSection[2];
+				CubeSection old5 = *rSection[3];
+
+				*rSection[3] = rotateColorsR(old1);
+				*rSection[2] = rotateColorsR(old5);
+				*rSection[1] = rotateColorsR(old7);
+				*rSection[0] = rotateColorsR(old3);
+			} else if (R == -1) {
+				CubeSection old1 = *rSection[0];
+				CubeSection old3 = *rSection[1];
+				CubeSection old7 = *rSection[2];
+				CubeSection old5 = *rSection[3];
+
+				*rSection[1] = rotateColorsRPrime(old1);
+				*rSection[2] = rotateColorsRPrime(old3);
+				*rSection[3] = rotateColorsRPrime(old7);
+				*rSection[0] = rotateColorsRPrime(old5);
+			}
+			resetSlotVertices(*rSection[0], 1);
+			resetSlotVertices(*rSection[1], 3);
+			resetSlotVertices(*rSection[2], 7);
+			resetSlotVertices(*rSection[3], 5);
+			R = 0;
+			amountOfRotation = 0.0f;
+		}
+	} else if (U != 0) {
+		float step = speed * U;
+		for (auto* cube:uSection) {
+			rotateSectionY(*cube, step);
+		}
+		amountOfRotation += std::abs(step);
+		if (amountOfRotation >= (PI/2.0f)) {
+			if (U == 1) {
+				CubeSection old0 = *uSection[0];
+				CubeSection old2 = *uSection[1];
+				CubeSection old3 = *uSection[2];
+				CubeSection old1 = *uSection[3];
+
+				*uSection[3] = rotateColorsU(old0);
+				*uSection[2] = rotateColorsU(old1);
+				*uSection[1] = rotateColorsU(old3);
+				*uSection[0] = rotateColorsU(old2);
+			} else if (U == -1) {
+				CubeSection old0 = *uSection[0];
+				CubeSection old2 = *uSection[1];
+				CubeSection old3 = *uSection[2];
+				CubeSection old1 = *uSection[3];
+
+				*uSection[1] = rotateColorsUPrime(old0);
+				*uSection[2] = rotateColorsUPrime(old2);
+				*uSection[3] = rotateColorsUPrime(old3);
+				*uSection[0] = rotateColorsUPrime(old1);
+			}
+			resetSlotVertices(*uSection[0], 0);
+			resetSlotVertices(*uSection[1], 2);
+			resetSlotVertices(*uSection[2], 3);
+			resetSlotVertices(*uSection[3], 1);
+			U = 0;
+			amountOfRotation = 0.0f;
+		}
+	} else if (D != 0) {
+		float step = speed * D;
+		for (auto* cube:dSection) {
+			rotateSectionY(*cube, -step);
+		}
+		amountOfRotation += std::abs(step);
+		if (amountOfRotation >= (PI/2.0f)) {
+			if (D == 1) {
+				CubeSection old4 = *dSection[0];
+				CubeSection old6 = *dSection[1];
+				CubeSection old7 = *dSection[2];
+				CubeSection old5 = *dSection[3];
+
+				*dSection[2] = rotateColorsD(old6);
+				*dSection[3] = rotateColorsD(old7);
+				*dSection[0] = rotateColorsD(old5);
+				*dSection[1] = rotateColorsD(old4);
+			} else if (D == -1) {
+				CubeSection old4 = *dSection[0];
+				CubeSection old6 = *dSection[1];
+				CubeSection old7 = *dSection[2];
+				CubeSection old5 = *dSection[3];
+
+				*dSection[0] = rotateColorsDPrime(old6);
+				*dSection[3] = rotateColorsDPrime(old4);
+				*dSection[2] = rotateColorsDPrime(old5);
+				*dSection[1] = rotateColorsDPrime(old7);
+			}
+			resetSlotVertices(*dSection[0], 4);
+			resetSlotVertices(*dSection[1], 6);
+			resetSlotVertices(*dSection[2], 7);
+			resetSlotVertices(*dSection[3], 5);
+			D = 0;
+			amountOfRotation = 0.0f;
+		}
+	} else if (F != 0) {
+		float step = speed * F;
+		for (auto* cube:fSection) {
+			rotateSectionZ(*cube, step);
+		}
+		amountOfRotation += std::abs(step);
+		if (amountOfRotation >= (PI/2.0f)) {
+			if (F == 1) {
+				CubeSection old3 = *fSection[0];
+				CubeSection old2 = *fSection[1];
+				CubeSection old6 = *fSection[2];
+				CubeSection old7 = *fSection[3];
+
+				*fSection[0] = rotateColorsF(old2);
+				*fSection[3] = rotateColorsF(old3);
+				*fSection[2] = rotateColorsF(old7);
+				*fSection[1] = rotateColorsF(old6);
+			} else if (F == -1) {
+				CubeSection old3 = *fSection[0];
+				CubeSection old2 = *fSection[1];
+				CubeSection old6 = *fSection[2];
+				CubeSection old7 = *fSection[3];
+
+				*fSection[2] = rotateColorsFPrime(old2);
+				*fSection[3] = rotateColorsFPrime(old6);
+				*fSection[0] = rotateColorsFPrime(old7);
+				*fSection[1] = rotateColorsFPrime(old3);
+			}
+			resetSlotVertices(*fSection[0], 3);
+			resetSlotVertices(*fSection[1], 2);
+			resetSlotVertices(*fSection[2], 6);
+			resetSlotVertices(*fSection[3], 7);
+			F = 0;
+			amountOfRotation = 0.0f;
+		}
+	} else if (B != 0) {
+		float step = speed * B;
+		for (auto* cube:bSection) {
+			rotateSectionZ(*cube, -step);
+		}
+		amountOfRotation += std::abs(step);
+		if (amountOfRotation >= (PI/2.0f)) {
+			if (B == 1) {
+				CubeSection old1 = *bSection[0];
+				CubeSection old0 = *bSection[1];
+				CubeSection old4 = *bSection[2];
+				CubeSection old5 = *bSection[3];
+
+				*bSection[2] = rotateColorsB(old0);
+				*bSection[3] = rotateColorsB(old4);
+				*bSection[0] = rotateColorsB(old5);
+				*bSection[1] = rotateColorsB(old1);
+			} else if (B == -1) {
+				CubeSection old1 = *bSection[0];
+				CubeSection old0 = *bSection[1];
+				CubeSection old4 = *bSection[2];
+				CubeSection old5 = *bSection[3];
+
+				*bSection[0] = rotateColorsBPrime(old0);
+				*bSection[3] = rotateColorsBPrime(old1);
+				*bSection[2] = rotateColorsBPrime(old5);
+				*bSection[1] = rotateColorsBPrime(old4);
+			}
+			resetSlotVertices(*bSection[0], 1);
+			resetSlotVertices(*bSection[1], 0);
+			resetSlotVertices(*bSection[2], 4);
+			resetSlotVertices(*bSection[3], 5);
+			B = 0;
 			amountOfRotation = 0.0f;
 		}
 	}
