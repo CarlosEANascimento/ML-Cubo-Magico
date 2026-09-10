@@ -5,6 +5,10 @@
 #include <cmath>
 #include <utility>
 
+#include <queue>
+#include <cstdlib>
+#include <ctime>
+
 #include "external/imgui/imgui.h"
 #include "external/imgui/backends/imgui_impl_glfw.h"
 #include "external/imgui/backends/imgui_impl_opengl3.h"
@@ -28,6 +32,14 @@ int B = 0;
 
 float theta = 0.0f;
 float amountOfRotation = 0.0f;
+
+// fila de movimentos para o embaralhamento
+struct Move { int face; int dir; }; // face: 0=L,1=R,2=U,3=D,4=F,5=B  dir: 1 ou -1
+std::queue<Move> shuffleQueue;
+int shuffleMoveCount = 10;   // quantidade de movimentos escolhida pelo usuário
+bool isShuffling = false;
+float rotationSpeed = 0.05f;  // velocidade de rotação (rad/frame)
+bool resetRequested = false;  // sinaliza que o cubo deve ser reinicializado
 
 // structs
 struct CamState {
@@ -457,6 +469,88 @@ void drawInfosGUI (
 	ImGui::End();
 }
 
+
+// GERAR EMBARALHAMENTO
+// gera N movimentos aleatórios e os coloca na fila de embaralhamento
+void shuffleRubiks(int numMoves) {
+	// limpa qualquer embaralhamento anterior
+	while (!shuffleQueue.empty()) shuffleQueue.pop();
+
+	int lastFace = -1; // evita repetir a mesma face consecutivamente
+	for (int i = 0; i < numMoves; ++i) {
+		int face;
+		do {
+			face = std::rand() % 6; // 0=L,1=R,2=U,3=D,4=F,5=B
+		} while (face == lastFace);
+		lastFace = face;
+
+		int dir = (std::rand() % 2 == 0) ? 1 : -1;
+		shuffleQueue.push({face, dir});
+	}
+	isShuffling = true;
+}
+
+// consome o próximo movimento da fila (chamado quando nenhum movimento está ativo)
+void dispatchNextShuffleMove() {
+	if (!isShuffling) return;
+
+	bool isBusy = (L != 0 || R != 0 || U != 0 || D != 0 || F != 0 || B != 0);
+	if (isBusy) return; // ainda animando, espera terminar
+
+	// só finaliza quando a fila está vazia E nenhum movimento está rodando
+	if (shuffleQueue.empty()) {
+		isShuffling = false;
+		return;
+	}
+
+	Move m = shuffleQueue.front();
+	shuffleQueue.pop();
+
+	switch (m.face) {
+		case 0: L = m.dir; break;
+		case 1: R = m.dir; break;
+		case 2: U = m.dir; break;
+		case 3: D = m.dir; break;
+		case 4: F = m.dir; break;
+		case 5: B = m.dir; break;
+	}
+}
+
+void drawShuffleGUI() {
+	// ancora no canto inferior esquerdo
+	ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+	ImGui::SetNextWindowPos(ImVec2(20, displaySize.y - 20), ImGuiCond_Always, ImVec2(0.0f, 1.0f));
+	ImGui::SetNextWindowSize(ImVec2(300, 0), ImGuiCond_Always);
+	ImGui::Begin("Embaralhar", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar);
+
+	ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "=== Embaralhamento ===");
+	ImGui::Separator();
+	ImGui::SliderInt("Movimentos", &shuffleMoveCount, 1, 50);
+	ImGui::SliderFloat("Velocidade", &rotationSpeed, 0.005f, 0.10f, "%.3f rad/f");
+
+	if (isShuffling) {
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f),
+			"Embaralhando... (%d restantes)", (int)shuffleQueue.size() + (L||R||U||D||F||B ? 1 : 0));
+	} else {
+		if (ImGui::Button("Embaralhar!", ImVec2(-1, 30))) {
+			shuffleRubiks(shuffleMoveCount);
+		}
+		ImGui::Spacing();
+		ImGui::Separator();
+		ImGui::Spacing();
+		ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.6f, 0.1f, 0.1f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+		if (ImGui::Button("Resetar Cubo", ImVec2(-1, 30))) {
+			resetRequested = true;
+		}
+		ImGui::PopStyleColor(3);
+	}
+	ImGui::End();
+}
+// FIM DE GERAR EMBARALHAMENTO
+
+
 void rotateX (Coord3d &v, float angle) {
 	float cosA = std::cos(angle);
 	float sinA = std::sin(angle);
@@ -614,7 +708,7 @@ void moveRubiks (
 	std::array<CubeSection*, 4> bSection
 	) {
 
-	float speed = 0.05f;
+	float speed = rotationSpeed;
 
 	if (L != 0) {
 		float step = speed * L;
@@ -834,6 +928,36 @@ void moveRubiks (
 	}
 }
 
+// inicializa (ou reinicializa) o cubo com as cores e vértices originais
+void initCube(std::array<CubeSection, 8>& cube, Coord3d cubeOrigem) {
+	Color red    = {1.0f, 0.0f, 0.0f};
+	Color green  = {0.0f, 1.0f, 0.0f};
+	Color blue   = {0.0f, 0.0f, 1.0f};
+	Color white  = {0.8f, 0.8f, 0.8f};
+	Color yellow = {1.0f, 1.0f, 0.0f};
+	Color orange = {1.0f, 0.5f, 0.0f};
+	Color gray   = {0.15f, 0.15f, 0.15f};
+
+	auto sectionsCenter = calcCubeVertex(cubeOrigem, N);
+	auto v = calcCubeVertex(sectionsCenter[0], N);
+
+	cube[0] = {v[0],v[1],v[2],v[3],v[4],v[5],v[6],v[7], orange, gray,   white,  gray,   gray,  blue};
+	v = calcCubeVertex(sectionsCenter[1], N);
+	cube[1] = {v[0],v[1],v[2],v[3],v[4],v[5],v[6],v[7], gray,   red,    white,  gray,   gray,  blue};
+	v = calcCubeVertex(sectionsCenter[2], N);
+	cube[2] = {v[0],v[1],v[2],v[3],v[4],v[5],v[6],v[7], orange, gray,   white,  gray,   green, gray};
+	v = calcCubeVertex(sectionsCenter[3], N);
+	cube[3] = {v[0],v[1],v[2],v[3],v[4],v[5],v[6],v[7], gray,   red,    white,  gray,   green, gray};
+	v = calcCubeVertex(sectionsCenter[4], N);
+	cube[4] = {v[0],v[1],v[2],v[3],v[4],v[5],v[6],v[7], orange, gray,   gray,   yellow, gray,  blue};
+	v = calcCubeVertex(sectionsCenter[5], N);
+	cube[5] = {v[0],v[1],v[2],v[3],v[4],v[5],v[6],v[7], gray,   red,    gray,   yellow, gray,  blue};
+	v = calcCubeVertex(sectionsCenter[6], N);
+	cube[6] = {v[0],v[1],v[2],v[3],v[4],v[5],v[6],v[7], orange, gray,   gray,   yellow, green, gray};
+	v = calcCubeVertex(sectionsCenter[7], N);
+	cube[7] = {v[0],v[1],v[2],v[3],v[4],v[5],v[6],v[7], gray,   red,    gray,   yellow, green, gray};
+}
+
 int main() {
 	CamState cam;
 	Coord3d cubeOrigem;
@@ -848,122 +972,9 @@ int main() {
 	std::array<CubeSection*, 4> fSection = {&cube[3], &cube[2], &cube[6], &cube[7]};
 	std::array<CubeSection*, 4> bSection = {&cube[1], &cube[0], &cube[4], &cube[5]};
 
-	// cores
-	Color red = {1.0f, 0.0f, 0.0f};
-	Color green = {0.0f, 1.0f, 0.0f};
-	Color blue = {0.0f, 0.0f, 1.0f};
-	Color white = {0.8f, 0.8f, 0.8f};
-	Color yellow = {1.0f, 1.0f, 0.0f};
-	Color orange = {1.0f, 0.5f, 0.0f};
-	Color gray = {0.15f, 0.15f, 0.15f};
-
 	// inicializando e montando o cubo
+	initCube(cube, cubeOrigem);
 
-	// isso aqui me dá o centroide de cada um dos pequenos cubos
-	auto sectionsCenter = calcCubeVertex(cubeOrigem, N);
-	auto cubeVertexes = calcCubeVertex(sectionsCenter[0], N);
-
-	cube[0] = {
-		cubeVertexes[0],
-		cubeVertexes[1],
-		cubeVertexes[2],
-		cubeVertexes[3],
-		cubeVertexes[4],
-		cubeVertexes[5],
-		cubeVertexes[6],
-		cubeVertexes[7],
-		orange, gray, white, gray, gray, blue};
-
-	cubeVertexes = calcCubeVertex(sectionsCenter[1], N);
-	
-	cube[1] = {
-		cubeVertexes[0],
-		cubeVertexes[1],
-		cubeVertexes[2],
-		cubeVertexes[3],
-		cubeVertexes[4],
-		cubeVertexes[5],
-		cubeVertexes[6],
-		cubeVertexes[7],
-		gray, red, white, gray, gray, blue};
-
-	cubeVertexes = calcCubeVertex(sectionsCenter[2], N);
-	
-	cube[2] = {
-		cubeVertexes[0],
-		cubeVertexes[1],
-		cubeVertexes[2],
-		cubeVertexes[3],
-		cubeVertexes[4],
-		cubeVertexes[5],
-		cubeVertexes[6],
-		cubeVertexes[7],
-		orange, gray, white, gray, green, gray};
-
-	cubeVertexes = calcCubeVertex(sectionsCenter[3], N);
-	
-	cube[3] = {
-		cubeVertexes[0],
-		cubeVertexes[1],
-		cubeVertexes[2],
-		cubeVertexes[3],
-		cubeVertexes[4],
-		cubeVertexes[5],
-		cubeVertexes[6],
-		cubeVertexes[7],
-		gray, red, white, gray, green, gray};
-
-	cubeVertexes = calcCubeVertex(sectionsCenter[4], N);
-
-	cube[4] = {
-		cubeVertexes[0],
-		cubeVertexes[1],
-		cubeVertexes[2],
-		cubeVertexes[3],
-		cubeVertexes[4],
-		cubeVertexes[5],
-		cubeVertexes[6],
-		cubeVertexes[7],
-		orange, gray, gray, yellow, gray, blue};
-
-	cubeVertexes = calcCubeVertex(sectionsCenter[5], N);
-
-	cube[5] = {
-		cubeVertexes[0],
-		cubeVertexes[1],
-		cubeVertexes[2],
-		cubeVertexes[3],
-		cubeVertexes[4],
-		cubeVertexes[5],
-		cubeVertexes[6],
-		cubeVertexes[7],
-		gray, red, gray, yellow, gray, blue};
-
-	cubeVertexes = calcCubeVertex(sectionsCenter[6], N);
-
-	cube[6] = {
-		cubeVertexes[0],
-		cubeVertexes[1],
-		cubeVertexes[2],
-		cubeVertexes[3],
-		cubeVertexes[4],
-		cubeVertexes[5],
-		cubeVertexes[6],
-		cubeVertexes[7],
-		orange, gray, gray, yellow, green, gray};
-
-	cubeVertexes = calcCubeVertex(sectionsCenter[7], N);
-
-	cube[7] = {
-		cubeVertexes[0],
-		cubeVertexes[1],
-		cubeVertexes[2],
-		cubeVertexes[3],
-		cubeVertexes[4],
-		cubeVertexes[5],
-		cubeVertexes[6],
-		cubeVertexes[7],
-		gray, red, gray, yellow, green, gray};
 
 	if (!glfwInit()) {
 		std::cerr << "Falha ao inicializar o GLFW" << std::endl;
@@ -1001,15 +1012,31 @@ int main() {
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
 	ImGui_ImplOpenGL3_Init("#version 120");
 
+	// semente para geração de números aleatórios
+	std::srand(static_cast<unsigned int>(std::time(nullptr)));
+
 	// loop de renderização
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
 
+		// despacha o próximo movimento do embaralhamento se houver
+		dispatchNextShuffleMove();
+
+		// reset do cubo (solicitado pelo botão da GUI)
+		if (resetRequested) {
+			L = R = U = D = F = B = 0;
+			amountOfRotation = 0.0f;
+			while (!shuffleQueue.empty()) shuffleQueue.pop();
+			isShuffling = false;
+			initCube(cube, cubeOrigem);
+			resetRequested = false;
+		}
+
 		moveRubiks(uSection, dSection, rSection, lSection, fSection, bSection);
 
-		// mexer com os inputs
+		// mexer com os inputs (bloqueado durante embaralhamento)
 		processInput(window);
-		rubiksInteractions(window, cube);
+		if (!isShuffling) rubiksInteractions(window, cube);
 
 		// cria o frame onde o GUI vai ficar
 		ImGui_ImplOpenGL3_NewFrame();
@@ -1038,6 +1065,7 @@ int main() {
 
 		drawCartesianPlanLabels();
 		drawInfosGUI(uSection, dSection, rSection, lSection, fSection, bSection);
+		drawShuffleGUI();
 
 		// renderizações label & hud
 
