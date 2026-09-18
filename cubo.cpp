@@ -4,10 +4,19 @@
 #include <functional>
 #include <cmath>
 #include <utility>
+#include <algorithm>
+#include <cstdint>
+#include <memory>
+#include <queue>
+#include <random>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
-#include "external/imgui/imgui.h"
-#include "external/imgui/backends/imgui_impl_glfw.h"
-#include "external/imgui/backends/imgui_impl_opengl3.h"
+#include "imgui.h"
+#include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_opengl3.h"
 
 // constantes
 const float N = 1.0f;
@@ -68,6 +77,467 @@ struct CubeSection {
 	Color front;
 	Color back;
 };
+
+// =========================
+// Modelo logico + IA 2x2x2
+// =========================
+// Estado: 24 adesivos, 4 por face, na ordem U, D, R, L, F, B.
+// Este estado e propositalmente separado da geometria 3D: a IA trabalha
+// sobre uma representacao simples, serializavel e facil de explicar.
+struct CubeState {
+	std::array<char, 24> stickers{};
+};
+
+struct StickerRef {
+	int x;
+	int y;
+	int z;
+	int nx;
+	int ny;
+	int nz;
+};
+
+enum class FrontierMode {
+	FIFO,      // Busca em Largura: fila
+	LIFO,      // Busca em Profundidade Limitada: pilha
+	PRIORITY   // A*: fila de prioridade
+};
+
+struct SearchStats {
+	bool solved = false;
+	int visited = 0;
+	int depth = 0;
+	std::vector<std::string> solution;
+	std::string message;
+};
+
+struct SearchNode {
+	CubeState state;
+	int parent = -1;
+	std::string move;
+	int depth = 0;
+};
+
+struct SearchConfig {
+	FrontierMode frontierMode = FrontierMode::FIFO;
+	bool useDepthLimit = false;
+	int depthLimit = 0;
+	int heuristicWeight = 0;
+	std::string name;
+};
+
+struct Frontier {
+	virtual ~Frontier() = default;
+	virtual void add(int nodeIndex, int priority) = 0;
+	virtual int removeNext() = 0;
+	virtual bool empty() const = 0;
+};
+
+struct QueueFrontier : Frontier {
+	std::queue<int> data;
+	void add(int nodeIndex, int) override { data.push(nodeIndex); }
+	int removeNext() override {
+		int nodeIndex = data.front();
+		data.pop();
+		return nodeIndex;
+	}
+	bool empty() const override { return data.empty(); }
+};
+
+struct StackFrontier : Frontier {
+	std::vector<int> data;
+	void add(int nodeIndex, int) override { data.push_back(nodeIndex); }
+	int removeNext() override {
+		int nodeIndex = data.back();
+		data.pop_back();
+		return nodeIndex;
+	}
+	bool empty() const override { return data.empty(); }
+};
+
+struct PriorityFrontier : Frontier {
+	struct Item {
+		int priority;
+		int order;
+		int nodeIndex;
+	};
+
+	struct Compare {
+		bool operator()(const Item &a, const Item &b) const {
+			if (a.priority != b.priority) return a.priority > b.priority;
+			return a.order > b.order;
+		}
+	};
+
+	std::priority_queue<Item, std::vector<Item>, Compare> data;
+	int order = 0;
+
+	void add(int nodeIndex, int priority) override {
+		data.push({priority, order++, nodeIndex});
+	}
+
+	int removeNext() override {
+		int nodeIndex = data.top().nodeIndex;
+		data.pop();
+		return nodeIndex;
+	}
+
+	bool empty() const override { return data.empty(); }
+};
+
+const std::array<std::string, 12> ALL_MOVES = {
+	"L", "L'", "R", "R'", "U", "U'", "D", "D'", "F", "F'", "B", "B'"
+};
+
+// Cada indice aponta para a coordenada do cubinho e a normal daquela face.
+// A ordem coincide com a rede mostrada na interface:
+// U: 0..3, D: 4..7, R: 8..11, L: 12..15, F: 16..19, B: 20..23.
+const std::array<StickerRef, 24> STICKER_REFS = {{
+	{ 1,  1, -1,  0,  1,  0}, { 1,  1,  1,  0,  1,  0},
+	{-1,  1, -1,  0,  1,  0}, {-1,  1,  1,  0,  1,  0},
+	{ 1, -1,  1,  0, -1,  0}, { 1, -1, -1,  0, -1,  0},
+	{-1, -1,  1,  0, -1,  0}, {-1, -1, -1,  0, -1,  0},
+	{ 1,  1,  1,  1,  0,  0}, { 1,  1, -1,  1,  0,  0},
+	{ 1, -1,  1,  1,  0,  0}, { 1, -1, -1,  1,  0,  0},
+	{-1,  1, -1, -1,  0,  0}, {-1,  1,  1, -1,  0,  0},
+	{-1, -1, -1, -1,  0,  0}, {-1, -1,  1, -1,  0,  0},
+	{-1,  1,  1,  0,  0,  1}, { 1,  1,  1,  0,  0,  1},
+	{-1, -1,  1,  0,  0,  1}, { 1, -1,  1,  0,  0,  1},
+	{ 1,  1, -1,  0,  0, -1}, {-1,  1, -1,  0,  0, -1},
+	{ 1, -1, -1,  0,  0, -1}, {-1, -1, -1,  0,  0, -1},
+}};
+
+CubeState makeSolvedState() {
+	CubeState state;
+	const std::array<char, 6> faces = {'W', 'Y', 'R', 'O', 'G', 'B'};
+	for (int face = 0; face < 6; ++face) {
+		for (int i = 0; i < 4; ++i) state.stickers[face * 4 + i] = faces[face];
+	}
+	return state;
+}
+
+std::string serializeState(const CubeState &state) {
+	return std::string(state.stickers.begin(), state.stickers.end());
+}
+
+bool isGoalState(const CubeState &state) {
+	return state.stickers == makeSolvedState().stickers;
+}
+
+int evaluateState(const CubeState &state) {
+	int misplaced = 0;
+	CubeState solved = makeSolvedState();
+	for (int i = 0; i < 24; ++i) {
+		if (state.stickers[i] != solved.stickers[i]) ++misplaced;
+	}
+
+	// Heuristica escolhida para A*: uma rotacao altera no maximo 8 adesivos.
+	// Portanto ceil(adesivos_fora_do_lugar / 8) e um limite inferior simples.
+	return (misplaced + 7) / 8;
+}
+
+bool sameState(const CubeState &a, const CubeState &b) {
+	return a.stickers == b.stickers;
+}
+
+bool isInverseMove(const std::string &a, const std::string &b) {
+	if (a.empty() || b.empty()) return false;
+	if (a[0] != b[0]) return false;
+	return a.size() != b.size();
+}
+
+bool isSameFaceMove(const std::string &a, const std::string &b) {
+	return !a.empty() && !b.empty() && a[0] == b[0];
+}
+
+StickerRef rotateStickerRef(StickerRef ref, char axis, int dir) {
+	auto rotateOnce = [&](StickerRef &s) {
+		if (axis == 'X') {
+			int y = s.y, z = s.z, ny = s.ny, nz = s.nz;
+			s.y = -z; s.z = y;
+			s.ny = -nz; s.nz = ny;
+		} else if (axis == 'Y') {
+			int x = s.x, z = s.z, nx = s.nx, nz = s.nz;
+			s.x = -z; s.z = x;
+			s.nx = -nz; s.nz = nx;
+		} else {
+			int x = s.x, y = s.y, nx = s.nx, ny = s.ny;
+			s.x = y; s.y = -x;
+			s.nx = ny; s.ny = -nx;
+		}
+	};
+
+	int turns = dir > 0 ? 1 : 3;
+	for (int i = 0; i < turns; ++i) rotateOnce(ref);
+	return ref;
+}
+
+int stickerIndexFor(const StickerRef &ref) {
+	for (int i = 0; i < static_cast<int>(STICKER_REFS.size()); ++i) {
+		const auto &candidate = STICKER_REFS[i];
+		if (candidate.x == ref.x && candidate.y == ref.y && candidate.z == ref.z &&
+			candidate.nx == ref.nx && candidate.ny == ref.ny && candidate.nz == ref.nz) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+bool isStickerInLayer(const StickerRef &ref, char axis, int layer) {
+	if (axis == 'X') return ref.x == layer;
+	if (axis == 'Y') return ref.y == layer;
+	return ref.z == layer;
+}
+
+void moveInfo(const std::string &move, char &axis, int &layer, int &dir) {
+	char face = move[0];
+	bool prime = move.size() > 1;
+
+	if (face == 'R') { axis = 'X'; layer =  1; dir = -1; }
+	if (face == 'L') { axis = 'X'; layer = -1; dir =  1; }
+	if (face == 'U') { axis = 'Y'; layer =  1; dir =  1; }
+	if (face == 'D') { axis = 'Y'; layer = -1; dir = -1; }
+	if (face == 'F') { axis = 'Z'; layer =  1; dir =  1; }
+	if (face == 'B') { axis = 'Z'; layer = -1; dir = -1; }
+
+	if (prime) dir *= -1;
+}
+
+CubeState applyMoveToState(const CubeState &state, const std::string &move) {
+	char axis = 'X';
+	int layer = 1;
+	int dir = 1;
+	moveInfo(move, axis, layer, dir);
+
+	CubeState next = state;
+	for (int i = 0; i < 24; ++i) {
+		StickerRef ref = STICKER_REFS[i];
+		if (!isStickerInLayer(ref, axis, layer)) continue;
+
+		StickerRef rotated = rotateStickerRef(ref, axis, dir);
+		int destination = stickerIndexFor(rotated);
+		if (destination >= 0) {
+			next.stickers[destination] = state.stickers[i];
+		}
+	}
+	return next;
+}
+
+std::vector<std::pair<std::string, CubeState>> successors(const SearchNode &node) {
+	std::vector<std::pair<std::string, CubeState>> nextStates;
+	nextStates.reserve(12);
+
+	for (const auto &move : ALL_MOVES) {
+		if (isInverseMove(node.move, move)) continue;
+		nextStates.push_back({move, applyMoveToState(node.state, move)});
+	}
+
+	return nextStates;
+}
+
+std::vector<std::string> reconstructSolution(const std::vector<SearchNode> &nodes, int nodeIndex) {
+	std::vector<std::string> solution;
+	while (nodeIndex >= 0 && nodes[nodeIndex].parent >= 0) {
+		solution.push_back(nodes[nodeIndex].move);
+		nodeIndex = nodes[nodeIndex].parent;
+	}
+	std::reverse(solution.begin(), solution.end());
+	return solution;
+}
+
+std::unique_ptr<Frontier> makeFrontier(FrontierMode mode) {
+	if (mode == FrontierMode::FIFO) return std::make_unique<QueueFrontier>();
+	if (mode == FrontierMode::LIFO) return std::make_unique<StackFrontier>();
+	return std::make_unique<PriorityFrontier>();
+}
+
+int calculatePriority(const CubeState &state, int depth, const SearchConfig &config) {
+	if (config.frontierMode != FrontierMode::PRIORITY) return depth;
+
+	// Parametro que transforma o mesmo laco em A*:
+	// f(n) = g(n) + peso * h(n). Para A*, peso = 1.
+	return depth + config.heuristicWeight * evaluateState(state);
+}
+
+SearchStats solveSearch(const CubeState &start, const SearchConfig &config, int maxVisited) {
+	std::unique_ptr<Frontier> frontier = makeFrontier(config.frontierMode);
+	std::vector<SearchNode> nodes;
+	std::unordered_map<std::string, int> bestDepth;
+	SearchStats stats;
+
+	nodes.push_back({start, -1, "", 0});
+	frontier->add(0, calculatePriority(start, 0, config));
+	bestDepth[serializeState(start)] = 0;
+
+	// Laco exigido no enunciado:
+	// 1. Adicionar estado na estrutura
+	// 2. Enquanto a estrutura nao estiver vazia:
+	//    2.1 Remover proximo estado da estrutura
+	//    2.2 Avaliar estado
+	//    2.3 Adicionar estados seguintes na estrutura
+	// A estrutura e a prioridade mudam por parametro, sem alterar este laco.
+	while (!frontier->empty()) {
+		int currentIndex = frontier->removeNext();
+		SearchNode current = nodes[currentIndex];
+		stats.visited++;
+
+		if (isGoalState(current.state)) {
+			stats.solved = true;
+			stats.depth = current.depth;
+			stats.solution = reconstructSolution(nodes, currentIndex);
+			stats.message = "Solucao encontrada.";
+			return stats;
+		}
+
+		if (stats.visited >= maxVisited) {
+			stats.message = "Limite de estados visitados atingido.";
+			return stats;
+		}
+
+		if (config.useDepthLimit && current.depth >= config.depthLimit) continue;
+
+		for (const auto &entry : successors(current)) {
+			const std::string &move = entry.first;
+			const CubeState &childState = entry.second;
+			std::string key = serializeState(childState);
+			int childDepth = current.depth + 1;
+
+			auto found = bestDepth.find(key);
+			if (found != bestDepth.end() && found->second <= childDepth) continue;
+
+			bestDepth[key] = childDepth;
+			nodes.push_back({childState, currentIndex, move, childDepth});
+			int childIndex = static_cast<int>(nodes.size()) - 1;
+			int priority = calculatePriority(childState, childDepth, config);
+			frontier->add(childIndex, priority);
+		}
+	}
+
+	stats.message = "Sem solucao.";
+	return stats;
+}
+
+SearchStats solveBfs(const CubeState &start, int maxVisited) {
+	SearchConfig config;
+	config.frontierMode = FrontierMode::FIFO;
+	config.name = "Busca em Largura";
+	return solveSearch(start, config, maxVisited);
+}
+
+SearchStats solveDepthLimited(const CubeState &start, int depthLimit, int maxVisited) {
+	SearchConfig config;
+	config.frontierMode = FrontierMode::LIFO;
+	config.useDepthLimit = true;
+	config.depthLimit = depthLimit;
+	config.name = "Busca em Profundidade Limitada";
+	return solveSearch(start, config, maxVisited);
+}
+
+SearchStats solveIterativeDeepening(const CubeState &start, int maxDepth, int maxVisited) {
+	SearchStats total;
+	for (int limit = 0; limit <= maxDepth; ++limit) {
+		SearchStats attempt = solveDepthLimited(start, limit, maxVisited);
+		total.visited += attempt.visited;
+
+		if (attempt.solved) {
+			attempt.visited = total.visited;
+			attempt.message = "Solucao encontrada com limite " + std::to_string(limit) + ".";
+			return attempt;
+		}
+	}
+	total.message = "Sem solucao ate o limite informado.";
+	return total;
+}
+
+SearchStats solveAStar(const CubeState &start, int maxVisited) {
+	SearchConfig config;
+	config.frontierMode = FrontierMode::PRIORITY;
+	config.heuristicWeight = 1;
+	config.name = "A*";
+	return solveSearch(start, config, maxVisited);
+}
+
+CubeState scrambleState(uint32_t seed, int movesCount, std::vector<std::string> &movesUsed) {
+	CubeState state = makeSolvedState();
+	std::mt19937 rng(seed);
+	std::uniform_int_distribution<int> dist(0, static_cast<int>(ALL_MOVES.size()) - 1);
+	std::string previous;
+
+	movesUsed.clear();
+	for (int i = 0; i < movesCount; ++i) {
+		std::string move;
+		do {
+			move = ALL_MOVES[dist(rng)];
+		} while (isInverseMove(previous, move) || isSameFaceMove(previous, move));
+
+		state = applyMoveToState(state, move);
+		movesUsed.push_back(move);
+		previous = move;
+	}
+	return state;
+}
+
+std::string joinMoves(const std::vector<std::string> &moves) {
+	if (moves.empty()) return "(nenhum)";
+	std::ostringstream out;
+	for (size_t i = 0; i < moves.size(); ++i) {
+		if (i) out << ' ';
+		out << moves[i];
+	}
+	return out.str();
+}
+
+Color colorForSticker(char sticker) {
+	if (sticker == 'W') return {0.85f, 0.85f, 0.85f};
+	if (sticker == 'Y') return {1.0f, 1.0f, 0.0f};
+	if (sticker == 'R') return {1.0f, 0.0f, 0.0f};
+	if (sticker == 'O') return {1.0f, 0.5f, 0.0f};
+	if (sticker == 'G') return {0.0f, 1.0f, 0.0f};
+	if (sticker == 'B') return {0.0f, 0.0f, 1.0f};
+	return {0.15f, 0.15f, 0.15f};
+}
+
+void applyStateToCube(std::array<CubeSection, 8> &cube, const CubeState &state) {
+	Color gray = {0.15f, 0.15f, 0.15f};
+	for (auto &piece : cube) {
+		piece.left = gray;
+		piece.right = gray;
+		piece.top = gray;
+		piece.bottom = gray;
+		piece.front = gray;
+		piece.back = gray;
+	}
+
+	cube[1].top = colorForSticker(state.stickers[0]);
+	cube[3].top = colorForSticker(state.stickers[1]);
+	cube[0].top = colorForSticker(state.stickers[2]);
+	cube[2].top = colorForSticker(state.stickers[3]);
+
+	cube[7].bottom = colorForSticker(state.stickers[4]);
+	cube[5].bottom = colorForSticker(state.stickers[5]);
+	cube[6].bottom = colorForSticker(state.stickers[6]);
+	cube[4].bottom = colorForSticker(state.stickers[7]);
+
+	cube[3].right = colorForSticker(state.stickers[8]);
+	cube[1].right = colorForSticker(state.stickers[9]);
+	cube[7].right = colorForSticker(state.stickers[10]);
+	cube[5].right = colorForSticker(state.stickers[11]);
+
+	cube[0].left = colorForSticker(state.stickers[12]);
+	cube[2].left = colorForSticker(state.stickers[13]);
+	cube[4].left = colorForSticker(state.stickers[14]);
+	cube[6].left = colorForSticker(state.stickers[15]);
+
+	cube[2].front = colorForSticker(state.stickers[16]);
+	cube[3].front = colorForSticker(state.stickers[17]);
+	cube[6].front = colorForSticker(state.stickers[18]);
+	cube[7].front = colorForSticker(state.stickers[19]);
+
+	cube[1].back = colorForSticker(state.stickers[20]);
+	cube[0].back = colorForSticker(state.stickers[21]);
+	cube[5].back = colorForSticker(state.stickers[22]);
+	cube[4].back = colorForSticker(state.stickers[23]);
+}
 
 // callbacks
 void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
@@ -187,39 +657,39 @@ void rubiksInteractions (GLFWwindow* window, std::array<CubeSection, 8> &cube) {
 	if (isBusy) return;
 
     if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS) {
-        if (glfwGetKey(window, GLFW_KEY_UP)) {
+        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
 			L = 1;
-        } else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
+        } else if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
 			L = -1;
         }
     } else if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
-        if (glfwGetKey(window, GLFW_KEY_UP)) {
+        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
 			R = 1;
-        } else if (glfwGetKey(window, GLFW_KEY_DOWN)) {
+        } else if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
 			R = -1;
         }
     } else if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS) {
-        if (glfwGetKey(window, GLFW_KEY_LEFT)) {
+        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
 			U = 1;
-        } else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
+        } else if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
 			U = -1;
         }
     } else if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-        if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
+        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
 			D = 1;
-        } else if (glfwGetKey(window, GLFW_KEY_LEFT)) {
+        } else if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
 			D = -1;
         }
     } else if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS) {
-        if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
+        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
 			F = 1;
-        } else if (glfwGetKey(window, GLFW_KEY_LEFT)) {
+        } else if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
 			F = -1;
         }
     } else if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS) {
-        if (glfwGetKey(window, GLFW_KEY_LEFT)) {
+        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
 			B = 1;
-        } else if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
+        } else if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
 			B = -1;
         }
     }
@@ -403,9 +873,7 @@ void drawInfosGUI (
 	ImGui::Text("Cubo Mágico (Arraste com o Mouse)");
 	ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
 
-	ImGui::Text("Para mover R & L: L + seta UP | DOWN; R + seta UP | DOWN");
-	ImGui::Text("Para mover U & D: U + seta RIGHT | LEFT; D + seta RIGHT | LEFT");
-	ImGui::Text("Para mover F & B: F + seta RIGHT | LEFT; B + seta RIGHT | LEFT");
+	ImGui::Text("Use a janela 'Jogo e IA' para mover, embaralhar e resolver.");
 
 	ImGui::Text("UP FACES");
 	ImGui::TextColored(ImVec4(uSection[3]->top.r, uSection[3]->top.g, uSection[3]->top.b, 1.0f),"[O]");
@@ -454,6 +922,130 @@ void drawInfosGUI (
 	ImGui::TextColored(ImVec4(bSection[3]->back.r, bSection[3]->back.g, bSection[3]->back.b, 1.0f),"[O]");
 	ImGui::SameLine();
 	ImGui::TextColored(ImVec4(bSection[2]->back.r, bSection[2]->back.g, bSection[2]->back.b, 1.0f),"[O]");
+	ImGui::End();
+}
+
+void drawAiControlGUI(
+	CubeState &state,
+	std::array<CubeSection, 8> &cube,
+	int &seed,
+	int &scrambleLength,
+	int &depthLimit,
+	int &maxVisited,
+	std::vector<std::string> &scrambleMoves,
+	SearchStats &lastStats,
+	std::vector<std::string> &pendingSolution,
+	int &pendingSolutionIndex
+) {
+	ImGui::SetNextWindowPos(ImVec2(560, 20), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(ImVec2(330, 560), ImGuiCond_FirstUseEver);
+	ImGui::Begin("Jogo e IA");
+
+	ImGui::TextWrapped("Estado: 24 adesivos (U,D,R,L,F,B). Sucessores: 12 movimentos.");
+	ImGui::TextWrapped("Mesmo laco de busca: BFS usa fila, IDDFS usa pilha+limite, A* usa prioridade g+h.");
+	ImGui::Separator();
+
+	ImGui::Text("Jogar");
+	auto moveButton = [&](const char *label, const std::string &move) {
+		if (ImGui::Button(label, ImVec2(70, 0))) {
+			state = applyMoveToState(state, move);
+			applyStateToCube(cube, state);
+			pendingSolution.clear();
+			pendingSolutionIndex = 0;
+			lastStats = {};
+			lastStats.message = "Movimento aplicado: " + move;
+		}
+	};
+
+	moveButton("L", "L"); ImGui::SameLine();
+	moveButton("L'", "L'"); ImGui::SameLine();
+	moveButton("R", "R"); ImGui::SameLine();
+	moveButton("R'", "R'");
+	moveButton("U", "U"); ImGui::SameLine();
+	moveButton("U'", "U'"); ImGui::SameLine();
+	moveButton("D", "D"); ImGui::SameLine();
+	moveButton("D'", "D'");
+	moveButton("F", "F"); ImGui::SameLine();
+	moveButton("F'", "F'"); ImGui::SameLine();
+	moveButton("B", "B"); ImGui::SameLine();
+	moveButton("B'", "B'");
+
+	if (ImGui::Button("Resetar cubo", ImVec2(-1, 0))) {
+		state = makeSolvedState();
+		applyStateToCube(cube, state);
+		scrambleMoves.clear();
+		pendingSolution.clear();
+		pendingSolutionIndex = 0;
+		lastStats = {};
+		lastStats.message = "Cubo resetado.";
+	}
+
+	ImGui::Separator();
+	ImGui::Text("Embaralhamento reproduzivel");
+	ImGui::InputInt("Seed", &seed);
+	ImGui::SliderInt("Qtd. movimentos", &scrambleLength, 1, 12);
+	if (ImGui::Button("Embaralhar com seed", ImVec2(-1, 0))) {
+		state = scrambleState(static_cast<uint32_t>(seed), scrambleLength, scrambleMoves);
+		applyStateToCube(cube, state);
+		pendingSolution.clear();
+		pendingSolutionIndex = 0;
+		lastStats = {};
+		lastStats.message = "Cubo embaralhado.";
+	}
+	ImGui::TextWrapped("Scramble: %s", joinMoves(scrambleMoves).c_str());
+
+	ImGui::Separator();
+	ImGui::Text("Solucionar por IA");
+	ImGui::InputInt("Max. visitados", &maxVisited);
+	if (maxVisited < 1000) maxVisited = 1000;
+	ImGui::SliderInt("Limite IDDFS", &depthLimit, 1, 14);
+
+	auto runSolver = [&](const char *name, const std::function<SearchStats()> &solver) {
+		lastStats = solver();
+		pendingSolution = lastStats.solution;
+		pendingSolutionIndex = 0;
+		if (lastStats.solved) {
+			lastStats.message = std::string(name) + ": solucao encontrada.";
+		} else {
+			lastStats.message = std::string(name) + ": " + lastStats.message;
+		}
+	};
+
+	if (ImGui::Button("Busca em Largura", ImVec2(-1, 0))) {
+		runSolver("BFS", [&]() { return solveBfs(state, maxVisited); });
+	}
+	if (ImGui::Button("Profundidade Iterativa", ImVec2(-1, 0))) {
+		runSolver("IDDFS", [&]() { return solveIterativeDeepening(state, depthLimit, maxVisited); });
+	}
+	if (ImGui::Button("A* (prioridade g+h)", ImVec2(-1, 0))) {
+		runSolver("A*", [&]() { return solveAStar(state, maxVisited); });
+	}
+
+	ImGui::Separator();
+	ImGui::Text("Resultado");
+	ImGui::Text("Visitados: %d", lastStats.visited);
+	ImGui::Text("Profundidade: %d", lastStats.depth);
+	ImGui::Text("h(estado atual): %d", evaluateState(state));
+	ImGui::TextWrapped("%s", lastStats.message.c_str());
+	ImGui::TextWrapped("Solucao: %s", joinMoves(pendingSolution).c_str());
+
+	if (!pendingSolution.empty()) {
+		ImGui::Text("Passo: %d / %d", pendingSolutionIndex, static_cast<int>(pendingSolution.size()));
+		if (ImGui::Button("Aplicar proximo passo", ImVec2(-1, 0)) &&
+			pendingSolutionIndex < static_cast<int>(pendingSolution.size())) {
+			state = applyMoveToState(state, pendingSolution[pendingSolutionIndex]);
+			applyStateToCube(cube, state);
+			pendingSolutionIndex++;
+		}
+		if (ImGui::Button("Aplicar solucao toda", ImVec2(-1, 0))) {
+			while (pendingSolutionIndex < static_cast<int>(pendingSolution.size())) {
+				state = applyMoveToState(state, pendingSolution[pendingSolutionIndex]);
+				pendingSolutionIndex++;
+			}
+			applyStateToCube(cube, state);
+		}
+	}
+
 	ImGui::End();
 }
 
@@ -848,6 +1440,17 @@ int main() {
 	std::array<CubeSection*, 4> fSection = {&cube[3], &cube[2], &cube[6], &cube[7]};
 	std::array<CubeSection*, 4> bSection = {&cube[1], &cube[0], &cube[4], &cube[5]};
 
+	CubeState currentState = makeSolvedState();
+	SearchStats lastStats;
+	lastStats.message = "Pronto para jogar ou resolver.";
+	std::vector<std::string> scrambleMoves;
+	std::vector<std::string> pendingSolution;
+	int pendingSolutionIndex = 0;
+	int seed = 2026;
+	int scrambleLength = 4;
+	int depthLimit = 10;
+	int maxVisited = 500000;
+
 	// cores
 	Color red = {1.0f, 0.0f, 0.0f};
 	Color green = {0.0f, 1.0f, 0.0f};
@@ -965,6 +1568,8 @@ int main() {
 		cubeVertexes[7],
 		gray, red, gray, yellow, green, gray};
 
+	applyStateToCube(cube, currentState);
+
 	if (!glfwInit()) {
 		std::cerr << "Falha ao inicializar o GLFW" << std::endl;
 		return -1;
@@ -1005,11 +1610,8 @@ int main() {
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
 
-		moveRubiks(uSection, dSection, rSection, lSection, fSection, bSection);
-
 		// mexer com os inputs
 		processInput(window);
-		rubiksInteractions(window, cube);
 
 		// cria o frame onde o GUI vai ficar
 		ImGui_ImplOpenGL3_NewFrame();
@@ -1038,6 +1640,18 @@ int main() {
 
 		drawCartesianPlanLabels();
 		drawInfosGUI(uSection, dSection, rSection, lSection, fSection, bSection);
+		drawAiControlGUI(
+			currentState,
+			cube,
+			seed,
+			scrambleLength,
+			depthLimit,
+			maxVisited,
+			scrambleMoves,
+			lastStats,
+			pendingSolution,
+			pendingSolutionIndex
+		);
 
 		// renderizações label & hud
 
