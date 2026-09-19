@@ -1,23 +1,23 @@
 #ifndef BUSCA_LARGURA_H
 #define BUSCA_LARGURA_H
 
-#include <cstddef>
-#include <vector>
+#include <queue>
 
-#include "estado.h"
+#include "busca.h"
 
-struct ResultadoBFS {
-    bool encontrou = false;
+class FronteiraBFS
+{
+private:
+    std::queue<int> fila;
 
-    std::vector<Movimento> caminho;
+public:
+    void adicionar(int indice);
 
-    std::size_t estadosVisitados = 0;
+    int remover();
 
-    int profundidade = -1;
+    bool vazia() const;
+
+    void limpar();
 };
-
-ResultadoBFS buscaEmLargura(
-    const EstadoCubo& inicial
-);
 
 #endif
