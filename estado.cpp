@@ -87,11 +87,86 @@ EstadoCubo criarEstadoResolvido()
     return estado;
 }
 
-bool estadoFinal(const EstadoCubo& estado)
+static bool faceUniforme(
+    Cor a,
+    Cor b,
+    Cor c,
+    Cor d
+)
 {
-    return estado == criarEstadoResolvido();
+    return
+        a != Cor::CINZA &&
+        a == b &&
+        a == c &&
+        a == d;
 }
 
+bool estadoFinal(const EstadoCubo& estado)
+{
+    const auto& p = estado.pecas;
+
+    // Face superior
+    bool cima =
+        faceUniforme(
+            p[0].top,
+            p[1].top,
+            p[2].top,
+            p[3].top
+        );
+
+    // Face inferior
+    bool baixo =
+        faceUniforme(
+            p[4].bottom,
+            p[5].bottom,
+            p[6].bottom,
+            p[7].bottom
+        );
+
+    // Face esquerda
+    bool esquerda =
+        faceUniforme(
+            p[0].left,
+            p[2].left,
+            p[4].left,
+            p[6].left
+        );
+
+    // Face direita
+    bool direita =
+        faceUniforme(
+            p[1].right,
+            p[3].right,
+            p[5].right,
+            p[7].right
+        );
+
+    // Face frontal
+    bool frente =
+        faceUniforme(
+            p[2].front,
+            p[3].front,
+            p[6].front,
+            p[7].front
+        );
+
+    // Face traseira
+    bool tras =
+        faceUniforme(
+            p[0].back,
+            p[1].back,
+            p[4].back,
+            p[5].back
+        );
+
+    return
+        cima &&
+        baixo &&
+        esquerda &&
+        direita &&
+        frente &&
+        tras;
+}
 
 static PecaLogica rotateColorsL(const PecaLogica& peca)
 {

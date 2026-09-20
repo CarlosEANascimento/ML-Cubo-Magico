@@ -1,5 +1,5 @@
 #include <iostream>
-
+#include "simetria.h"
 #include "estado.h"
 #include "busca_largura.h"
 
@@ -7,6 +7,42 @@ int main()
 {
     EstadoCubo resolvido =
         criarEstadoResolvido();
+
+    auto simetrias =
+    gerarSimetrias(resolvido);
+
+    std::cout
+        << "Quantidade de simetrias: "
+        << simetrias.size()
+        << '\n';
+
+    if (simetrias.size() != 24)
+    {
+        std::cerr
+            << "ERRO: deveriam existir 24 simetrias.\n";
+
+        return 1;
+    }
+
+    std::cout
+        << "Teste das simetrias: OK\n";
+
+    EstadoCubo canonicoResolvido =
+    estadoCanonico(resolvido);
+
+    for (const EstadoCubo& simetria : simetrias)
+    {
+        if (!(estadoCanonico(simetria) == canonicoResolvido))
+        {
+            std::cerr
+                << "ERRO: simetrias nao geraram o mesmo estado canonico.\n";
+
+            return 1;
+        }
+    }
+
+    std::cout
+        << "Teste do estado canonico: OK\n";
     struct ParMovimentos
     {
         Movimento movimento;
@@ -66,9 +102,17 @@ int main()
     cubo,
     Movimento::F
     );
+    cubo = aplicarMovimento(
+    cubo,
+    Movimento::L
+    );
+    cubo = aplicarMovimento(
+    cubo,
+    Movimento::B
+    );
 
     std::cout
-        << "Cubo embaralhado com: R U F\n";
+        << "Cubo embaralhado com: R U F L B\n";
 
     ResultadoBusca resultado =
         buscaEmLargura(cubo);
@@ -88,6 +132,15 @@ int main()
         << "Profundidade: "
         << resultado.profundidade
         << '\n';
+
+    if (resultado.profundidade > 5)
+    {
+        std::cerr
+            << "ERRO: a BFS encontrou uma solucao maior "
+            << "que o embaralhamento utilizado.\n";
+
+        return 1;
+    }
 
     std::cout
         << "Estados visitados: "

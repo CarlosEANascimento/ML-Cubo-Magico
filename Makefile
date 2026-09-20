@@ -8,6 +8,7 @@ CXXFLAGS = -std=c++17 -Wall \
 LIBS = -lglfw -lGL -lX11 -lpthread -lXrandr -lXi -ldl
 
 CORE_SRCS = estado.cpp \
+           simetria.cpp \
 	    busca.cpp \
 	    busca_largura.cpp
 

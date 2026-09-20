@@ -1,4 +1,5 @@
 #include "busca_largura.h"
+#include "simetria.h"
 
 bool FronteiraBFS::adicionar(
     int indice,
@@ -6,9 +7,12 @@ bool FronteiraBFS::adicionar(
 )
 {
 
-    auto [iterador, inseriu] =
-        visitados.insert(no.estado);
+    EstadoCubo canonico =
+        estadoCanonico(no.estado);
 
+    bool inseriu =
+        visitados.insert(canonico).second;
+        
     if (!inseriu)
     {
         return false;
