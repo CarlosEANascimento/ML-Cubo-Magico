@@ -1,8 +1,21 @@
 #include "busca_largura.h"
 
-void FronteiraBFS::adicionar(int indice)
+bool FronteiraBFS::adicionar(
+    int indice,
+    const NoBusca& no
+)
 {
+
+    auto [iterador, inseriu] =
+        visitados.insert(no.estado);
+
+    if (!inseriu)
+    {
+        return false;
+    }
     fila.push(indice);
+
+    return true;
 }
 
 int FronteiraBFS::remover()
@@ -25,4 +38,17 @@ void FronteiraBFS::limpar()
     {
         fila.pop();
     }
+
+    visitados.clear();
+}
+ResultadoBusca buscaEmLargura(
+    const EstadoCubo& inicial
+)
+{
+    FronteiraBFS fronteira;
+
+    return buscarGenerico(
+        inicial,
+        fronteira
+    );
 }
