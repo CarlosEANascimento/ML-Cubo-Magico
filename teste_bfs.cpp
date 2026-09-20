@@ -50,14 +50,25 @@ int main()
     std::cout
         << "Teste dos movimentos: OK\n";
 
-    EstadoCubo cubo =
-        aplicarMovimento(
-            resolvido,
-            Movimento::R
-        );
+    EstadoCubo cubo = resolvido;
+
+    cubo = aplicarMovimento(
+        cubo,
+        Movimento::R
+    );
+
+    cubo = aplicarMovimento(
+        cubo,
+        Movimento::U
+    );
+
+    cubo = aplicarMovimento(
+    cubo,
+    Movimento::F
+    );
 
     std::cout
-        << "Cubo embaralhado com: R\n";
+        << "Cubo embaralhado com: R U F\n";
 
     ResultadoBusca resultado =
         buscaEmLargura(cubo);

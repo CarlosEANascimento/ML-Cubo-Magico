@@ -6,7 +6,7 @@
 
 #include "busca.h"
 
-class FronteiraBFS
+class FronteiraBFS : public Fronteira
 {
 private:
  std::queue<int> fila;
@@ -22,11 +22,11 @@ public:
         const NoBusca& no
     ) override;
 
-    int remover();
+    int remover() override;
 
-    bool vazia() const;
+    bool vazia() const override;
 
-    void limpar();
+    void limpar() override;
 };
 
 

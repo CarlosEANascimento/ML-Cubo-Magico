@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <vector>
 
+
 struct NoBusca
 {
     EstadoCubo estado;
@@ -18,6 +19,7 @@ struct NoBusca
     int profundidade = 0;
 };
 
+
 struct ResultadoBusca
 {
     bool encontrou = false;
@@ -28,5 +30,33 @@ struct ResultadoBusca
 
     int profundidade = -1;
 };
+
+class Fronteira
+{
+public:
+
+    virtual ~Fronteira() = default;
+
+
+    virtual bool adicionar(
+        int indice,
+        const NoBusca& no
+    ) = 0;
+
+
+    virtual int remover() = 0;
+
+
+    virtual bool vazia() const = 0;
+
+
+    virtual void limpar() = 0;
+};
+
+ResultadoBusca buscarGenerico(
+    const EstadoCubo& inicial,
+    Fronteira& fronteira
+);
+
 
 #endif
