@@ -10,9 +10,11 @@ LIBS = -lglfw -lGL -lX11 -lpthread -lXrandr -lXi -ldl
 CORE_SRCS = estado.cpp \
            simetria.cpp \
 	    busca.cpp \
-	    busca_largura.cpp
+	    busca_largura.cpp \
+	    busca_profundidade.cpp
 
 GUI_SRCS = cubo.cpp \
+	   glad/src/glad.c \
 	   external/imgui/imgui.cpp \
 	   external/imgui/imgui_demo.cpp \
 	   external/imgui/imgui_draw.cpp \

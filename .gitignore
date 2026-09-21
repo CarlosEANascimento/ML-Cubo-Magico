@@ -1,0 +1,22 @@
+# Executaveis e binarios
+*.exe
+*.out
+*.app
+*.o
+*.obj
+
+# DLLs e bibliotecas dinamicas locais do Windows/MinGW
+*.dll
+*.so
+*.dylib
+*.a
+
+# Logs de compilacao
+build_*.txt
+*.log
+
+# Arquivo de configuracao da UI ImGui local
+imgui.ini
+
+# Makefile de ambiente especifico
+Makefile.win

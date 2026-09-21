@@ -18,6 +18,7 @@
 #include "external/imgui/backends/imgui_impl_opengl3.h"
 
 #include "busca_largura.h"
+#include "busca_profundidade.h"
 #include "estado.h"
 
 // constantes
@@ -114,6 +115,10 @@ struct SolverResult {
 };
 SolverResult solverResult;
 std::atomic<bool> solverRunning{false};
+
+// Resultado e flag independentes para o IDDFS
+SolverResult solverResultIDS;
+std::atomic<bool> solverRunningIDS{false};
 // =================================================================
 
 // Converte Color (OpenGL float) → Cor (enum lógico)
@@ -838,14 +843,95 @@ void drawSolverGUI() {
 			for (size_t pos = 0; pos < p.size(); pos += lineLen) {
 				ImGui::TextUnformatted(p.substr(pos, lineLen).c_str());
 			}
-			ImGui::Spacing();
-			ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "(Ex: Lu = L+seta cima)");
 		} else {
 			ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Sem solucao encontrada.");
 			ImGui::Text("Nos visitados: %d", solverResult.nodesVisited);
 		}
 	} else {
 		ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Aguardando...");
+	}
+
+	// =========================================================
+	// SECAO: Busca em Profundidade (IDDFS)
+	// =========================================================
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	ImGui::TextColored(ImVec4(0.9f, 0.5f, 1.0f, 1.0f), "Busca em Profundidade (IDDFS)");
+	ImGui::Spacing();
+
+	bool isBusyIDS = isShuffling || isPlayingSolution || solverRunningIDS.load();
+	bool canSolveIDS = savedCubeState.valid && !isBusyIDS && !solverRunning.load();
+
+	ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.35f, 0.1f, 0.55f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.5f, 0.2f, 0.75f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.7f, 0.35f, 1.0f, 1.0f));
+	if (!canSolveIDS) ImGui::BeginDisabled();
+	if (ImGui::Button("Resolver IDS", ImVec2(-1, 30)) && canSolveIDS) {
+		if (g_cubeRef && !solverRunningIDS.load()) {
+			// Monta estado logico a partir do estado salvo
+			std::array<CubeSection, 8> tempCube = *g_cubeRef;
+			for (int i = 0; i < 8; i++) {
+				tempCube[i].left   = savedCubeState.pieces[i].left;
+				tempCube[i].right  = savedCubeState.pieces[i].right;
+				tempCube[i].top    = savedCubeState.pieces[i].top;
+				tempCube[i].bottom = savedCubeState.pieces[i].bottom;
+				tempCube[i].front  = savedCubeState.pieces[i].front;
+				tempCube[i].back   = savedCubeState.pieces[i].back;
+			}
+			EstadoCubo estadoInicial = cubeToEstado(tempCube);
+			solverResultIDS = SolverResult{};
+			solverResultIDS.ran = false;
+			solverRunningIDS.store(true);
+			// Executa IDDFS em thread separada
+			std::thread([estadoInicial]() {
+				ResultadoBusca res = buscaEmProfundidade(estadoInicial);
+				solverResultIDS.found        = res.encontrou;
+				solverResultIDS.nodesVisited = (int)res.estadosVisitados;
+				solverResultIDS.moveCount    = (int)res.caminho.size();
+				// Monta caminho com notacao de 2 letras
+				std::ostringstream oss;
+				for (size_t i = 0; i < res.caminho.size(); i++) {
+					if (i > 0) oss << " ";
+					oss << nomeMovimentoTecla(res.caminho[i]);
+				}
+				solverResultIDS.path = oss.str();
+				solverResultIDS.ran  = true;
+				solverRunningIDS.store(false);
+			}).detach();
+		}
+	}
+	if (!canSolveIDS) ImGui::EndDisabled();
+	ImGui::PopStyleColor(3);
+
+	// Resultado IDDFS
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	if (solverRunningIDS.load()) {
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Buscando (IDS)...");
+	} else if (solverResultIDS.ran) {
+		if (solverResultIDS.found) {
+			ImGui::TextColored(ImVec4(0.85f, 0.5f, 1.0f, 1.0f), "Solucao IDS encontrada!");
+			ImGui::Text("Nos visitados: %d", solverResultIDS.nodesVisited);
+			ImGui::Text("Movimentos: %d", solverResultIDS.moveCount);
+			ImGui::Spacing();
+			ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Caminho IDS:");
+			const std::string& p2 = solverResultIDS.path;
+			const int lineLen2 = 35;
+			for (size_t pos = 0; pos < p2.size(); pos += lineLen2) {
+				ImGui::TextUnformatted(p2.substr(pos, lineLen2).c_str());
+			}
+			ImGui::Spacing();
+			ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "(Ex: Lu = L+seta cima)");
+		} else {
+			ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Sem solucao (IDS).");
+			ImGui::Text("Nos visitados: %d", solverResultIDS.nodesVisited);
+		}
+	} else {
+		ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Aguardando IDS...");
 	}
 
 	ImGui::End();
