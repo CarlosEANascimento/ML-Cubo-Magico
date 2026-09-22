@@ -8,10 +8,18 @@
 #include <queue>
 #include <cstdlib>
 #include <ctime>
+#include <string>
+#include <sstream>
+#include <thread>
+#include <atomic>
 
 #include "external/imgui/imgui.h"
 #include "external/imgui/backends/imgui_impl_glfw.h"
 #include "external/imgui/backends/imgui_impl_opengl3.h"
+
+#include "busca_largura.h"
+#include "busca_profundidade.h"
+#include "estado.h"
 
 // constantes
 const float N = 1.0f;
@@ -80,6 +88,84 @@ struct CubeSection {
 	Color front;
 	Color back;
 };
+
+// ===================== ESTADO SALVO & SOLVER =====================
+// Salva o estado visual (cores) do cubo para uso pelos algoritmos
+struct CubeColorState {
+    Color left, right, top, bottom, front, back;
+};
+struct CubeColorState8 {
+    std::array<CubeColorState, 8> pieces;
+    bool valid = false;
+};
+
+CubeColorState8 savedCubeState;  // estado salvo pelo usuário
+
+// Fila de movimentos para a solução animada
+std::queue<Move> solutionQueue;
+bool isPlayingSolution = false;
+
+// Resultado da busca em largura
+struct SolverResult {
+    bool ran          = false;
+    bool found        = false;
+    int  nodesVisited = 0;
+    int  moveCount    = 0;
+    std::string path;
+};
+SolverResult solverResult;
+std::atomic<bool> solverRunning{false};
+
+// Resultado e flag independentes para o IDDFS
+SolverResult solverResultIDS;
+std::atomic<bool> solverRunningIDS{false};
+// =================================================================
+
+// Converte Color (OpenGL float) → Cor (enum lógico)
+static Cor colorToCor(const Color& c) {
+    float r = c.r, g = c.g, b = c.b;
+    if (r < 0.2f && g < 0.2f && b < 0.2f) return Cor::CINZA;
+    if (r > 0.5f && g > 0.5f && b > 0.5f) return Cor::BRANCO;
+    if (r > 0.5f && g > 0.5f && b < 0.3f) return Cor::AMARELO;
+    if (r < 0.3f && g > 0.5f && b < 0.3f) return Cor::VERDE;
+    if (r < 0.3f && g < 0.3f && b > 0.5f) return Cor::AZUL;
+    if (r > 0.5f && g < 0.3f && b < 0.3f) return Cor::VERMELHO;
+    if (r > 0.5f && g > 0.2f && g < 0.7f && b < 0.2f) return Cor::LARANJA;
+    return Cor::CINZA;
+}
+
+// Converte o array de CubeSection (visual) → EstadoCubo (lógico para IA)
+static EstadoCubo cubeToEstado(const std::array<CubeSection, 8>& cube) {
+    EstadoCubo estado;
+    for (int i = 0; i < 8; i++) {
+        estado.pecas[i].left   = colorToCor(cube[i].left);
+        estado.pecas[i].right  = colorToCor(cube[i].right);
+        estado.pecas[i].top    = colorToCor(cube[i].top);
+        estado.pecas[i].bottom = colorToCor(cube[i].bottom);
+        estado.pecas[i].front  = colorToCor(cube[i].front);
+        estado.pecas[i].back   = colorToCor(cube[i].back);
+    }
+    return estado;
+}
+
+// Converte Movimento → Move (para enfileirar na fila de animação)
+static Move movimentoToMove(Movimento m) {
+    switch (m) {
+        case Movimento::L:       return {0,  1};
+        case Movimento::L_PRIME: return {0, -1};
+        case Movimento::R:       return {1,  1};
+        case Movimento::R_PRIME: return {1, -1};
+        case Movimento::U:       return {2,  1};
+        case Movimento::U_PRIME: return {2, -1};
+        case Movimento::D:       return {3,  1};
+        case Movimento::D_PRIME: return {3, -1};
+        case Movimento::F:       return {4,  1};
+        case Movimento::F_PRIME: return {4, -1};
+        case Movimento::B:       return {5,  1};
+        case Movimento::B_PRIME: return {5, -1};
+        default:                 return {0,  0};
+    }
+}
 
 // callbacks
 void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
@@ -492,10 +578,29 @@ void shuffleRubiks(int numMoves) {
 
 // consome o próximo movimento da fila (chamado quando nenhum movimento está ativo)
 void dispatchNextShuffleMove() {
-	if (!isShuffling) return;
-
 	bool isBusy = (L != 0 || R != 0 || U != 0 || D != 0 || F != 0 || B != 0);
 	if (isBusy) return; // ainda animando, espera terminar
+
+	// Prioridade: solução > embaralhamento
+	if (isPlayingSolution) {
+		if (solutionQueue.empty()) {
+			isPlayingSolution = false;
+			return;
+		}
+		Move m = solutionQueue.front();
+		solutionQueue.pop();
+		switch (m.face) {
+			case 0: L = m.dir; break;
+			case 1: R = m.dir; break;
+			case 2: U = m.dir; break;
+			case 3: D = m.dir; break;
+			case 4: F = m.dir; break;
+			case 5: B = m.dir; break;
+		}
+		return;
+	}
+
+	if (!isShuffling) return;
 
 	// só finaliza quando a fila está vazia E nenhum movimento está rodando
 	if (shuffleQueue.empty()) {
@@ -549,6 +654,289 @@ void drawShuffleGUI() {
 	ImGui::End();
 }
 // FIM DE GERAR EMBARALHAMENTO
+
+
+// ===================== PAINEL DO SOLVER (LADO DIREITO) =====================
+// Referência ao cubo para os botões que precisam do estado visual
+static std::array<CubeSection, 8>* g_cubeRef = nullptr;
+static Coord3d*                     g_cubeOrigemRef = nullptr;
+
+// Nome do movimento com 2 letras, baseado nas teclas de seta dos controles:
+// L+Up=Lu, L+Down=Ld, R+Up=Ru, R+Down=Rd
+// U+Left=Ul, U+Right=Ur, D+Right=Dr, D+Left=Dl
+// F+Right=Fr, F+Left=Fl, B+Left=Bl, B+Right=Br
+static const char* nomeMovimentoTecla(Movimento m) {
+    switch (m) {
+        case Movimento::L:       return "Lu";
+        case Movimento::L_PRIME: return "Ld";
+        case Movimento::R:       return "Ru";
+        case Movimento::R_PRIME: return "Rd";
+        case Movimento::U:       return "Ul";
+        case Movimento::U_PRIME: return "Ur";
+        case Movimento::D:       return "Dr";
+        case Movimento::D_PRIME: return "Dl";
+        case Movimento::F:       return "Fr";
+        case Movimento::F_PRIME: return "Fl";
+        case Movimento::B:       return "Bl";
+        case Movimento::B_PRIME: return "Br";
+        default:                 return "??";
+    }
+}
+
+void drawSolverGUI() {
+	ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+	// Painel fixo no lado esquerdo, centralizado verticalmente
+	ImGui::SetNextWindowPos(ImVec2(displaySize.x - 320, 20), ImGuiCond_Always);
+	ImGui::SetNextWindowSize(ImVec2(300, 0), ImGuiCond_Always);
+	ImGui::Begin("Solver", nullptr,
+		ImGuiWindowFlags_NoMove |
+		ImGuiWindowFlags_AlwaysAutoResize |
+		ImGuiWindowFlags_NoTitleBar);
+
+	ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "=== Algoritmos de Busca ===");
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	// --- Botão: Salvar Estado Atual ---
+	bool isBusy = isShuffling || isPlayingSolution || solverRunning.load();
+
+	ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.1f, 0.5f, 0.1f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.3f, 0.9f, 0.3f, 1.0f));
+	if (!isBusy && ImGui::Button("Salvar estado atual", ImVec2(-1, 30))) {
+		// Salva as cores atuais de cada peça
+		if (g_cubeRef) {
+			for (int i = 0; i < 8; i++) {
+				savedCubeState.pieces[i] = {
+					(*g_cubeRef)[i].left,
+					(*g_cubeRef)[i].right,
+					(*g_cubeRef)[i].top,
+					(*g_cubeRef)[i].bottom,
+					(*g_cubeRef)[i].front,
+					(*g_cubeRef)[i].back
+				};
+			}
+			savedCubeState.valid = true;
+			// limpa resultados anteriores ao salvar novo estado
+			solverResult = SolverResult{};
+		}
+	}
+	ImGui::PopStyleColor(3);
+
+	if (savedCubeState.valid) {
+		ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Estado salvo!");
+	} else {
+		ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Nenhum estado salvo.");
+	}
+
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	// --- Botão: Voltar para estado salvo ---
+	ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.5f, 0.3f, 0.0f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.45f, 0.0f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(1.0f, 0.65f, 0.0f, 1.0f));
+	bool canRestore = savedCubeState.valid && !isBusy;
+	if (!canRestore) ImGui::BeginDisabled();
+	if (ImGui::Button("Voltar para estado salvo", ImVec2(-1, 30)) && canRestore) {
+		if (g_cubeRef) {
+			// Para qualquer movimento em andamento
+			L = R = U = D = F = B = 0;
+			amountOfRotation = 0.0f;
+			while (!shuffleQueue.empty()) shuffleQueue.pop();
+			while (!solutionQueue.empty()) solutionQueue.pop();
+			isShuffling = false;
+			isPlayingSolution = false;
+			// Restaura geometria (vértices canônicos) e cores salvas
+			Coord3d origin = {0.0f, 0.0f, 0.0f};
+			auto centers = calcCubeVertex(origin, N);
+			for (int i = 0; i < 8; i++) {
+				auto v = calcCubeVertex(centers[i], N);
+				(*g_cubeRef)[i].v0 = v[0]; (*g_cubeRef)[i].v1 = v[1];
+				(*g_cubeRef)[i].v2 = v[2]; (*g_cubeRef)[i].v3 = v[3];
+				(*g_cubeRef)[i].v4 = v[4]; (*g_cubeRef)[i].v5 = v[5];
+				(*g_cubeRef)[i].v6 = v[6]; (*g_cubeRef)[i].v7 = v[7];
+				(*g_cubeRef)[i].left   = savedCubeState.pieces[i].left;
+				(*g_cubeRef)[i].right  = savedCubeState.pieces[i].right;
+				(*g_cubeRef)[i].top    = savedCubeState.pieces[i].top;
+				(*g_cubeRef)[i].bottom = savedCubeState.pieces[i].bottom;
+				(*g_cubeRef)[i].front  = savedCubeState.pieces[i].front;
+				(*g_cubeRef)[i].back   = savedCubeState.pieces[i].back;
+			}
+			// limpa resultado anterior
+			solverResult = SolverResult{};
+		}
+	}
+	if (!canRestore) ImGui::EndDisabled();
+	ImGui::PopStyleColor(3);
+
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	// --- Botão: Resolver (BFS) ---
+	ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "Busca em Largura (BFS)");
+	ImGui::Spacing();
+
+	bool canSolve = savedCubeState.valid && !isBusy;
+	ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.1f, 0.2f, 0.6f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.35f, 0.85f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.35f, 0.55f, 1.0f, 1.0f));
+	if (!canSolve) ImGui::BeginDisabled();
+	if (ImGui::Button("Resolver", ImVec2(-1, 30)) && canSolve) {
+		if (g_cubeRef && !solverRunning.load()) {
+			// Captura estado lógico do estado salvo
+			// (recria um CubeSection temporário com as cores salvas para converter)
+			std::array<CubeSection, 8> tempCube = *g_cubeRef;
+			for (int i = 0; i < 8; i++) {
+				tempCube[i].left   = savedCubeState.pieces[i].left;
+				tempCube[i].right  = savedCubeState.pieces[i].right;
+				tempCube[i].top    = savedCubeState.pieces[i].top;
+				tempCube[i].bottom = savedCubeState.pieces[i].bottom;
+				tempCube[i].front  = savedCubeState.pieces[i].front;
+				tempCube[i].back   = savedCubeState.pieces[i].back;
+			}
+			EstadoCubo estadoInicial = cubeToEstado(tempCube);
+			solverResult = SolverResult{};
+			solverResult.ran = false;
+			solverRunning.store(true);
+			// Executa a BFS em uma thread separada para não travar a UI
+			std::thread([estadoInicial]() {
+				ResultadoBusca res = buscaEmLargura(estadoInicial);
+				solverResult.found        = res.encontrou;
+				solverResult.nodesVisited = (int)res.estadosVisitados;
+				solverResult.moveCount    = (int)res.caminho.size();
+				// Monta string do caminho com notação de 2 letras (baseado nas teclas)
+				std::ostringstream oss;
+				for (size_t i = 0; i < res.caminho.size(); i++) {
+					if (i > 0) oss << " ";
+					oss << nomeMovimentoTecla(res.caminho[i]);
+				}
+				solverResult.path         = oss.str();
+				solverResult.ran          = true;
+				// Nao anima: o usuario testa manualmente seguindo o caminho
+				solverRunning.store(false);
+			}).detach();
+		}
+	}
+	if (!canSolve) ImGui::EndDisabled();
+	ImGui::PopStyleColor(3);
+
+	// --- Exibição do resultado ---
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	if (solverRunning.load()) {
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Buscando solucao...");
+	} else if (solverResult.ran) {
+		if (solverResult.found) {
+			ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Solucao encontrada!");
+			ImGui::Text("Nos visitados: %d", solverResult.nodesVisited);
+			ImGui::Text("Movimentos: %d", solverResult.moveCount);
+			ImGui::Spacing();
+			ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Caminho:");
+			// Quebra o caminho em linhas de ~30 chars para não ultrapassar o painel
+			const std::string& p = solverResult.path;
+			const int lineLen = 35;
+			for (size_t pos = 0; pos < p.size(); pos += lineLen) {
+				ImGui::TextUnformatted(p.substr(pos, lineLen).c_str());
+			}
+		} else {
+			ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Sem solucao encontrada.");
+			ImGui::Text("Nos visitados: %d", solverResult.nodesVisited);
+		}
+	} else {
+		ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Aguardando...");
+	}
+
+	// =========================================================
+	// SECAO: Busca em Profundidade (IDDFS)
+	// =========================================================
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	ImGui::TextColored(ImVec4(0.9f, 0.5f, 1.0f, 1.0f), "Busca em Profundidade (IDDFS)");
+	ImGui::Spacing();
+
+	bool isBusyIDS = isShuffling || isPlayingSolution || solverRunningIDS.load();
+	bool canSolveIDS = savedCubeState.valid && !isBusyIDS && !solverRunning.load();
+
+	ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.35f, 0.1f, 0.55f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.5f, 0.2f, 0.75f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.7f, 0.35f, 1.0f, 1.0f));
+	if (!canSolveIDS) ImGui::BeginDisabled();
+	if (ImGui::Button("Resolver IDS", ImVec2(-1, 30)) && canSolveIDS) {
+		if (g_cubeRef && !solverRunningIDS.load()) {
+			// Monta estado logico a partir do estado salvo
+			std::array<CubeSection, 8> tempCube = *g_cubeRef;
+			for (int i = 0; i < 8; i++) {
+				tempCube[i].left   = savedCubeState.pieces[i].left;
+				tempCube[i].right  = savedCubeState.pieces[i].right;
+				tempCube[i].top    = savedCubeState.pieces[i].top;
+				tempCube[i].bottom = savedCubeState.pieces[i].bottom;
+				tempCube[i].front  = savedCubeState.pieces[i].front;
+				tempCube[i].back   = savedCubeState.pieces[i].back;
+			}
+			EstadoCubo estadoInicial = cubeToEstado(tempCube);
+			solverResultIDS = SolverResult{};
+			solverResultIDS.ran = false;
+			solverRunningIDS.store(true);
+			// Executa IDDFS em thread separada
+			std::thread([estadoInicial]() {
+				ResultadoBusca res = buscaEmProfundidade(estadoInicial);
+				solverResultIDS.found        = res.encontrou;
+				solverResultIDS.nodesVisited = (int)res.estadosVisitados;
+				solverResultIDS.moveCount    = (int)res.caminho.size();
+				// Monta caminho com notacao de 2 letras
+				std::ostringstream oss;
+				for (size_t i = 0; i < res.caminho.size(); i++) {
+					if (i > 0) oss << " ";
+					oss << nomeMovimentoTecla(res.caminho[i]);
+				}
+				solverResultIDS.path = oss.str();
+				solverResultIDS.ran  = true;
+				solverRunningIDS.store(false);
+			}).detach();
+		}
+	}
+	if (!canSolveIDS) ImGui::EndDisabled();
+	ImGui::PopStyleColor(3);
+
+	// Resultado IDDFS
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	if (solverRunningIDS.load()) {
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Buscando (IDS)...");
+	} else if (solverResultIDS.ran) {
+		if (solverResultIDS.found) {
+			ImGui::TextColored(ImVec4(0.85f, 0.5f, 1.0f, 1.0f), "Solucao IDS encontrada!");
+			ImGui::Text("Nos visitados: %d", solverResultIDS.nodesVisited);
+			ImGui::Text("Movimentos: %d", solverResultIDS.moveCount);
+			ImGui::Spacing();
+			ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Caminho IDS:");
+			const std::string& p2 = solverResultIDS.path;
+			const int lineLen2 = 35;
+			for (size_t pos = 0; pos < p2.size(); pos += lineLen2) {
+				ImGui::TextUnformatted(p2.substr(pos, lineLen2).c_str());
+			}
+			ImGui::Spacing();
+			ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "(Ex: Lu = L+seta cima)");
+		} else {
+			ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Sem solucao (IDS).");
+			ImGui::Text("Nos visitados: %d", solverResultIDS.nodesVisited);
+		}
+	} else {
+		ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Aguardando IDS...");
+	}
+
+	ImGui::End();
+}
+// ============================================================================
 
 
 void rotateX (Coord3d &v, float angle) {
@@ -975,6 +1363,9 @@ int main() {
 	// inicializando e montando o cubo
 	initCube(cube, cubeOrigem);
 
+	// conecta a referência global para o painel do solver
+	g_cubeRef = &cube;
+	g_cubeOrigemRef = &cubeOrigem;
 
 	if (!glfwInit()) {
 		std::cerr << "Falha ao inicializar o GLFW" << std::endl;
@@ -1034,9 +1425,9 @@ int main() {
 
 		moveRubiks(uSection, dSection, rSection, lSection, fSection, bSection);
 
-		// mexer com os inputs (bloqueado durante embaralhamento)
+		// mexer com os inputs (bloqueado durante embaralhamento e solução)
 		processInput(window);
-		if (!isShuffling) rubiksInteractions(window, cube);
+		if (!isShuffling && !isPlayingSolution) rubiksInteractions(window, cube);
 
 		// cria o frame onde o GUI vai ficar
 		ImGui_ImplOpenGL3_NewFrame();
@@ -1066,6 +1457,7 @@ int main() {
 		drawCartesianPlanLabels();
 		drawInfosGUI(uSection, dSection, rSection, lSection, fSection, bSection);
 		drawShuffleGUI();
+		drawSolverGUI();
 
 		// renderizações label & hud
 
