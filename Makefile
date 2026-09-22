@@ -46,5 +46,15 @@ test-bfs: teste_bfs
 	./teste_bfs
 
 
+# constroi (se preciso) e prova tabela_h.bin (~1 a 3 minutos, 29 MB)
+.PHONY: tabela
+tabela: $(CORE_SRCS) tabela.cpp
+	$(CXX) -std=c++17 -Wall -O2 \
+	$(CORE_SRCS) \
+	tabela.cpp \
+	-o tabela
+	./tabela
+
+
 clean:
-	rm -f $(TARGET) teste_bfs
+	rm -f $(TARGET) teste_bfs tabela
