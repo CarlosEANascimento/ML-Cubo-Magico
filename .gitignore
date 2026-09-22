@@ -2,8 +2,7 @@
 /cubo
 /cubo_mac
 /teste_bfs
-/gerar_tabela
-/verificar_tabela
+/tabela
 
 # Objetos e símbolos de depuração
 *.o

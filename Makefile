@@ -45,27 +45,15 @@ test-bfs: teste_bfs
 	./teste_bfs
 
 
-gerar_tabela: $(CORE_SRCS) gerar_tabela.cpp
+# constroi (se preciso) e prova tabela_h.bin (~1 a 3 minutos, 29 MB)
+.PHONY: tabela
+tabela: $(CORE_SRCS) tabela.cpp
 	$(CXX) -std=c++17 -Wall -O2 \
 	$(CORE_SRCS) \
-	gerar_tabela.cpp \
-	-o gerar_tabela
-
-# gera tabela_h.bin (cerca de 1 minuto, 29 MB)
-tabela: gerar_tabela
-	./gerar_tabela
-
-
-verificar_tabela: $(CORE_SRCS) verificar_tabela.cpp
-	$(CXX) -std=c++17 -Wall -O2 \
-	$(CORE_SRCS) \
-	verificar_tabela.cpp \
-	-o verificar_tabela
-
-# confere tabela_h.bin em todos os estados (cerca de 2 minutos)
-verificar: verificar_tabela
-	./verificar_tabela
+	tabela.cpp \
+	-o tabela
+	./tabela
 
 
 clean:
-	rm -f $(TARGET) teste_bfs gerar_tabela verificar_tabela
+	rm -f $(TARGET) teste_bfs tabela
