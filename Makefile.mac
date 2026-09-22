@@ -1,0 +1,57 @@
+# Build para macOS (uso: make -f Makefile.mac)
+# Requer: brew install glfw  e  external/imgui preenchida.
+# O executável se chama cubo_mac para não sobrescrever o 'cubo' do Linux.
+
+CXX = clang++
+
+GLFW_PREFIX := $(shell brew --prefix glfw)
+
+CXXFLAGS = -std=c++17 -Wall -DGL_SILENCE_DEPRECATION \
+	-Iglad/include \
+	-Iexternal/imgui \
+	-Iexternal/imgui/backends \
+	-I$(GLFW_PREFIX)/include
+
+LIBS = -L$(GLFW_PREFIX)/lib -lglfw -framework OpenGL -framework Cocoa -framework IOKit
+
+CORE_SRCS = estado.cpp \
+	    simetria.cpp \
+	    busca.cpp \
+	    busca_largura.cpp \
+	    heuristica.cpp
+
+GUI_SRCS = cubo.cpp \
+	   external/imgui/imgui.cpp \
+	   external/imgui/imgui_demo.cpp \
+	   external/imgui/imgui_draw.cpp \
+	   external/imgui/imgui_tables.cpp \
+	   external/imgui/imgui_widgets.cpp \
+	   external/imgui/backends/imgui_impl_glfw.cpp \
+	   external/imgui/backends/imgui_impl_opengl3.cpp
+
+SRCS = $(GUI_SRCS) $(CORE_SRCS)
+
+TARGET = cubo_mac
+
+all: $(TARGET)
+
+$(TARGET): $(SRCS)
+	$(CXX) $(CXXFLAGS) $(SRCS) $(LIBS) -o $(TARGET)
+
+run: $(TARGET)
+	./$(TARGET)
+
+teste_bfs: $(CORE_SRCS) teste_bfs.cpp
+	$(CXX) -std=c++17 -Wall -O2 $(CORE_SRCS) teste_bfs.cpp -o teste_bfs
+
+test-bfs: teste_bfs
+	./teste_bfs
+
+# constroi (se preciso) e prova tabela_h.bin (~1 a 3 minutos, 29 MB)
+.PHONY: tabela
+tabela: $(CORE_SRCS) tabela.cpp
+	$(CXX) -std=c++17 -Wall -O2 $(CORE_SRCS) tabela.cpp -o tabela
+	./tabela
+
+clean:
+	rm -f $(TARGET) teste_bfs tabela
