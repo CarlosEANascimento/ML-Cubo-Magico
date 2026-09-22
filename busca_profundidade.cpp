@@ -1,120 +1,101 @@
-﻿#include "busca_profundidade.h"
+#include "busca_profundidade.h"
 #include "simetria.h"
 
-#include <unordered_set>
-#include <vector>
 
-/*
- * DLS - Depth-Limited Search (busca em profundidade com limite fixo).
- *
- * Parametros:
- *   estado         - estado atual sendo explorado
- *   profAtual      - profundidade atual no caminho
- *   limite         - profundidade maxima permitida nesta iteracao
- *   caminho        - movimentos feitos ate aqui (pilha de backtracking)
- *   emCaminho      - estados canonicos presentes no caminho atual (evita ciclos)
- *   nosVisitados   - contador global de nos expandidos
- *
- * Retorna true se encontrou solucao (o caminho e preenchido).
- */
-static bool dls(
-    const EstadoCubo&                               estado,
-    int                                             profAtual,
-    int                                             limite,
-    std::vector<Movimento>&                         caminho,
-    std::unordered_set<EstadoCubo, EstadoHash>&     emCaminho,
-    std::size_t&                                    nosVisitados
+/* ---------------------------------------------------------------
+ * FronteiraDFS -- Implementacao dos metodos da interface Fronteira
+ * usando uma pilha (std::stack) e limite de profundidade.
+ * --------------------------------------------------------------- */
+
+bool FronteiraDFS::adicionar(
+    int indice,
+    const NoBusca& no
 )
 {
-    nosVisitados++;
-
-    if (estadoFinal(estado))
-    {
-        return true;
-    }
-
-    if (profAtual >= limite)
+    // Poda por profundidade: rejeita nos alem do limite
+    if (no.profundidade > limiteProf)
     {
         return false;
     }
 
-    for (const auto& [filho, movimento] : gerarSucessores(estado))
+    // Poda por simetria: estados canonicamente equivalentes
+    // ja visitados nesta iteracao sao descartados
+    EstadoCubo canonico =
+        estadoCanonico(no.estado);
+
+    bool inseriu =
+        visitados.insert(canonico).second;
+
+    if (!inseriu)
     {
-        EstadoCubo canonico = estadoCanonico(filho);
-
-        // Poda: nao re-visita estados canonicamente equivalentes
-        // que ja estao no caminho atual (evita ciclos)
-        if (emCaminho.count(canonico))
-        {
-            continue;
-        }
-
-        emCaminho.insert(canonico);
-        caminho.push_back(movimento);
-
-        if (dls(filho, profAtual + 1, limite, caminho, emCaminho, nosVisitados))
-        {
-            return true;
-        }
-
-        // Backtrack
-        caminho.pop_back();
-        emCaminho.erase(canonico);
+        return false;
     }
 
-    return false;
+    pilha.push(indice);
+
+    return true;
 }
 
-/*
- * IDDFS - Iterative Deepening Depth-First Search.
- *
- * Executa DLS com limite crescendo de 0 ate encontrar a solucao.
- * Cada iteracao recomeca do estado inicial com um limite maior.
- *
- * Nota sobre nosVisitados: o contador acumula entre todas as iteracoes,
- * refletindo o custo real total da busca (incluindo as re-exploracoes).
- */
-ResultadoBusca buscaEmProfundidade(const EstadoCubo& inicial)
+int FronteiraDFS::remover()
 {
-    ResultadoBusca resultado;
+    int indice = pilha.top();
 
-    EstadoCubo canonicoInicial = estadoCanonico(inicial);
+    pilha.pop();
 
-    // Caso especial: estado inicial ja e solucao
-    if (estadoFinal(inicial))
+    return indice;
+}
+
+bool FronteiraDFS::vazia() const
+{
+    return pilha.empty();
+}
+
+void FronteiraDFS::limpar()
+{
+    while (!pilha.empty())
     {
-        resultado.encontrou   = true;
-        resultado.profundidade = 0;
-        resultado.estadosVisitados = 1;
-        return resultado;
+        pilha.pop();
     }
 
-    for (int limite = 1; ; limite++)
+    visitados.clear();
+}
+
+
+/* ---------------------------------------------------------------
+ * IDDFS -- Iterative Deepening Depth-First Search
+ *
+ * Executa buscarGenerico() com FronteiraDFS, aumentando o limite
+ * de profundidade a cada iteracao ate encontrar a solucao.
+ *
+ * O contador de estadosVisitados acumula entre todas as iteracoes,
+ * refletindo o custo real total da busca.
+ * --------------------------------------------------------------- */
+
+ResultadoBusca buscaEmProfundidade(
+    const EstadoCubo& inicial
+)
+{
+    ResultadoBusca acumulado;
+
+    for (int limite = 0; ; limite++)
     {
-        std::vector<Movimento>                      caminho;
-        std::unordered_set<EstadoCubo, EstadoHash>  emCaminho;
+        FronteiraDFS fronteira(limite);
 
-        // Insere o estado inicial no conjunto do caminho
-        emCaminho.insert(canonicoInicial);
+        ResultadoBusca parcial =
+            buscarGenerico(inicial, fronteira);
 
-        bool encontrou = dls(
-            inicial,
-            0,
-            limite,
-            caminho,
-            emCaminho,
-            resultado.estadosVisitados
-        );
+        acumulado.estadosVisitados +=
+            parcial.estadosVisitados;
 
-        if (encontrou)
+        if (parcial.encontrou)
         {
-            resultado.encontrou   = true;
-            resultado.profundidade = static_cast<int>(caminho.size());
-            resultado.caminho      = caminho;
-            return resultado;
+            acumulado.encontrou    = true;
+            acumulado.profundidade = parcial.profundidade;
+            acumulado.caminho      = parcial.caminho;
+            return acumulado;
         }
     }
 
     // Nunca atingido (cubo 2x2 sempre tem solucao)
-    return resultado;
+    return acumulado;
 }
