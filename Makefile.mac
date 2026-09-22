@@ -1,14 +1,21 @@
-CXX = g++
+# Build para macOS (uso: make -f Makefile.mac)
+# Requer: brew install glfw  e  external/imgui preenchida.
+# O executável se chama cubo_mac para não sobrescrever o 'cubo' do Linux.
 
-CXXFLAGS = -std=c++17 -Wall \
+CXX = clang++
+
+GLFW_PREFIX := $(shell brew --prefix glfw)
+
+CXXFLAGS = -std=c++17 -Wall -DGL_SILENCE_DEPRECATION \
 	-Iglad/include \
 	-Iexternal/imgui \
-	-Iexternal/imgui/backends
+	-Iexternal/imgui/backends \
+	-I$(GLFW_PREFIX)/include
 
-LIBS = -lglfw -lGL -lX11 -lpthread -lXrandr -lXi -ldl
+LIBS = -L$(GLFW_PREFIX)/lib -lglfw -framework OpenGL -framework Cocoa -framework IOKit
 
 CORE_SRCS = estado.cpp \
-           simetria.cpp \
+	    simetria.cpp \
 	    busca.cpp \
 	    busca_largura.cpp \
 	    heuristica.cpp
@@ -24,7 +31,7 @@ GUI_SRCS = cubo.cpp \
 
 SRCS = $(GUI_SRCS) $(CORE_SRCS)
 
-TARGET = cubo
+TARGET = cubo_mac
 
 all: $(TARGET)
 
@@ -34,38 +41,25 @@ $(TARGET): $(SRCS)
 run: $(TARGET)
 	./$(TARGET)
 
-
 teste_bfs: $(CORE_SRCS) teste_bfs.cpp
-	$(CXX) -std=c++17 -Wall \
-	$(CORE_SRCS) \
-	teste_bfs.cpp \
-	-o teste_bfs
+	$(CXX) -std=c++17 -Wall -O2 $(CORE_SRCS) teste_bfs.cpp -o teste_bfs
 
 test-bfs: teste_bfs
 	./teste_bfs
 
-
 gerar_tabela: $(CORE_SRCS) gerar_tabela.cpp
-	$(CXX) -std=c++17 -Wall -O2 \
-	$(CORE_SRCS) \
-	gerar_tabela.cpp \
-	-o gerar_tabela
+	$(CXX) -std=c++17 -Wall -O2 $(CORE_SRCS) gerar_tabela.cpp -o gerar_tabela
 
 # gera tabela_h.bin (cerca de 1 minuto, 29 MB)
 tabela: gerar_tabela
 	./gerar_tabela
 
-
 verificar_tabela: $(CORE_SRCS) verificar_tabela.cpp
-	$(CXX) -std=c++17 -Wall -O2 \
-	$(CORE_SRCS) \
-	verificar_tabela.cpp \
-	-o verificar_tabela
+	$(CXX) -std=c++17 -Wall -O2 $(CORE_SRCS) verificar_tabela.cpp -o verificar_tabela
 
 # confere tabela_h.bin em todos os estados (cerca de 2 minutos)
 verificar: verificar_tabela
 	./verificar_tabela
-
 
 clean:
 	rm -f $(TARGET) teste_bfs gerar_tabela verificar_tabela

@@ -1,0 +1,10 @@
+# Executáveis gerados pelo make
+/cubo
+/cubo_mac
+/teste_bfs
+/gerar_tabela
+/verificar_tabela
+
+# Objetos e símbolos de depuração
+*.o
+*.dSYM/
