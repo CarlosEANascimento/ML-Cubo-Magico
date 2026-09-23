@@ -2,6 +2,8 @@
 #include "simetria.h"
 #include "estado.h"
 #include "busca_largura.h"
+#include "busca_profundidade.h"
+#include "busca_a_estrela.h"
 
 int main()
 {
@@ -181,6 +183,50 @@ int main()
 
     std::cout
         << "Validacao da solucao: OK\n";
+
+    ResultadoBusca resultadoIDS =
+        buscaEmProfundidade(cubo);
+
+    if (!resultadoIDS.encontrou)
+    {
+        std::cerr
+            << "ERRO: IDDFS nao encontrou solucao.\n";
+
+        return 1;
+    }
+
+    std::cout
+        << "IDDFS encontrou solucao em profundidade "
+        << resultadoIDS.profundidade
+        << " e visitou "
+        << resultadoIDS.estadosVisitados
+        << " estados.\n";
+
+    ResultadoBusca resultadoAEstrela =
+        buscaAEstrela(cubo);
+
+    if (!resultadoAEstrela.encontrou)
+    {
+        std::cerr
+            << "ERRO: A* nao encontrou solucao.\n";
+
+        return 1;
+    }
+
+    if (resultadoAEstrela.profundidade != resultado.profundidade)
+    {
+        std::cerr
+            << "ERRO: A* nao encontrou a profundidade otima da BFS.\n";
+
+        return 1;
+    }
+
+    std::cout
+        << "A* encontrou solucao em profundidade "
+        << resultadoAEstrela.profundidade
+        << " e visitou "
+        << resultadoAEstrela.estadosVisitados
+        << " estados.\n";
 
     return 0;
 }

@@ -11,7 +11,9 @@ CORE_SRCS = estado.cpp \
            simetria.cpp \
 	    busca.cpp \
 	    busca_largura.cpp \
-	    busca_profundidade.cpp
+	    busca_profundidade.cpp \
+	    heuristica.cpp \
+	    busca_a_estrela.cpp
 
 GUI_SRCS = cubo.cpp \
 	   glad/src/glad.c \

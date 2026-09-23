@@ -1,4 +1,4 @@
-# Cubo Mágico 2x2x2 com Busca em Largura (BFS)
+# Cubo Mágico 2x2x2 com Busca em IA
 
 Projeto acadêmico desenvolvido em **C++17** para representar, movimentar e resolver um **Cubo Mágico 2x2x2**.
 
@@ -12,12 +12,15 @@ O projeto possui duas partes principais:
 2. **Mecanismo de busca**
    - representação lógica do cubo
    - geração de movimentos
-   - Busca em Largura (BFS)
+        - Busca em Largura (BFS)
+        - Busca em Profundidade Iterativa (IDDFS)
+        - Busca A*
+        - heurística por tabela de distâncias exatas
    - tabela de estados visitados
    - simetrias
    - reconstrução do caminho da solução
 
-Esta documentação descreve principalmente o trabalho realizado na branch:
+Esta documentação descreve o estado atual do trabalho na branch:
 
 ```text
 busca-largura
@@ -39,18 +42,19 @@ um algoritmo de busca procure uma solução
 o programa mostre a sequência de movimentos
 ```
 
-Atualmente, a **Busca em Largura (BFS)** já consegue:
+Atualmente, o programa consegue:
 
 - representar o estado do cubo;
 - gerar sucessores;
 - detectar estados já visitados;
 - evitar estados equivalentes por simetria;
-- encontrar uma solução;
+- encontrar uma solução por BFS, IDDFS ou A*;
 - informar a profundidade da solução;
 - contar estados visitados;
 - reconstruir o caminho;
 - receber o estado atual do cubo 3D;
-- mostrar o resultado em uma janela ImGui.
+- mostrar o resultado em uma janela ImGui;
+- repetir um embaralhamento usando uma seed escolhida pelo usuário.
 
 ---
 
@@ -305,7 +309,40 @@ Uma vantagem importante dessa estrutura é que o algoritmo genérico não precis
 
 ---
 
-# 6. Representação do Cubo 2x2x2
+# 6. Busca em Profundidade Iterativa — IDDFS
+
+A IDDFS utiliza uma pilha (`std::stack`) e executa a busca em várias
+iterações, aumentando o limite de profundidade a cada tentativa. A mesma
+função `buscarGenerico()` é reutilizada; apenas a estrutura de fronteira e o
+limite mudam.
+
+A implementação é iterativa, sem recursão, completa e encontra uma solução de
+menor profundidade para movimentos de custo unitário.
+
+# 7. Busca A*
+
+A busca A* utiliza `std::priority_queue` e a mesma função `buscarGenerico()`.
+Cada estado recebe a prioridade:
+
+```text
+f(n) = g(n) + h(n)
+```
+
+`g(n)` é a profundidade do nó e `h(n)` é a distância exata até um estado
+resolvido, consultada em `tabela_h.bin`. A tabela é gerada por BFS a partir do
+estado resolvido quando ainda não existe e depois reutilizada.
+
+Como a heurística representa a distância real, ela é admissível e consistente.
+Por isso o A* mantém a solução ótima e normalmente visita menos estados que a
+BFS.
+
+# 8. Reprodutibilidade
+
+O painel de embaralhamento possui o campo `Seed`. O mesmo valor de seed e a
+mesma quantidade de movimentos produzem o mesmo embaralhamento, permitindo
+comparar BFS, IDDFS e A* sobre exatamente o mesmo estado inicial.
+
+# 9. Representação do Cubo 2x2x2
 
 O cubo possui 8 peças de canto.
 
@@ -356,7 +393,7 @@ front  = cinza
 
 ---
 
-# 7. Movimentos implementados
+# 10. Movimentos implementados
 
 Foram implementados os 12 movimentos básicos:
 

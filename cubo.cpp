@@ -19,6 +19,7 @@
 
 #include "busca_largura.h"
 #include "busca_profundidade.h"
+#include "busca_a_estrela.h"
 #include "estado.h"
 
 // constantes
@@ -45,6 +46,7 @@ float amountOfRotation = 0.0f;
 struct Move { int face; int dir; }; // face: 0=L,1=R,2=U,3=D,4=F,5=B  dir: 1 ou -1
 std::queue<Move> shuffleQueue;
 int shuffleMoveCount = 10;   // quantidade de movimentos escolhida pelo usuário
+int shuffleSeed = 12345;
 bool isShuffling = false;
 float rotationSpeed = 0.05f;  // velocidade de rotação (rad/frame)
 bool resetRequested = false;  // sinaliza que o cubo deve ser reinicializado
@@ -119,6 +121,10 @@ std::atomic<bool> solverRunning{false};
 // Resultado e flag independentes para o IDDFS
 SolverResult solverResultIDS;
 std::atomic<bool> solverRunningIDS{false};
+
+// Resultado e flag independentes para o A*
+SolverResult solverResultAEstrela;
+std::atomic<bool> solverRunningAEstrela{false};
 // =================================================================
 
 // Converte Color (OpenGL float) → Cor (enum lógico)
@@ -561,6 +567,7 @@ void drawInfosGUI (
 void shuffleRubiks(int numMoves) {
 	// limpa qualquer embaralhamento anterior
 	while (!shuffleQueue.empty()) shuffleQueue.pop();
+	std::srand(static_cast<unsigned int>(shuffleSeed));
 
 	int lastFace = -1; // evita repetir a mesma face consecutivamente
 	for (int i = 0; i < numMoves; ++i) {
@@ -631,6 +638,7 @@ void drawShuffleGUI() {
 	ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "=== Embaralhamento ===");
 	ImGui::Separator();
 	ImGui::SliderInt("Movimentos", &shuffleMoveCount, 1, 50);
+	ImGui::InputInt("Seed", &shuffleSeed);
 	ImGui::SliderFloat("Velocidade", &rotationSpeed, 0.005f, 0.10f, "%.3f rad/f");
 
 	if (isShuffling) {
@@ -698,7 +706,9 @@ void drawSolverGUI() {
 	ImGui::Spacing();
 
 	// --- Botão: Salvar Estado Atual ---
-	bool isBusy = isShuffling || isPlayingSolution || solverRunning.load();
+	bool isBusy = isShuffling || isPlayingSolution ||
+		solverRunning.load() || solverRunningIDS.load() ||
+		solverRunningAEstrela.load();
 
 	ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.1f, 0.5f, 0.1f, 1.0f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
@@ -719,6 +729,8 @@ void drawSolverGUI() {
 			savedCubeState.valid = true;
 			// limpa resultados anteriores ao salvar novo estado
 			solverResult = SolverResult{};
+			solverResultIDS = SolverResult{};
+			solverResultAEstrela = SolverResult{};
 		}
 	}
 	ImGui::PopStyleColor(3);
@@ -861,8 +873,7 @@ void drawSolverGUI() {
 	ImGui::TextColored(ImVec4(0.9f, 0.5f, 1.0f, 1.0f), "Busca em Profundidade (IDDFS)");
 	ImGui::Spacing();
 
-	bool isBusyIDS = isShuffling || isPlayingSolution || solverRunningIDS.load();
-	bool canSolveIDS = savedCubeState.valid && !isBusyIDS && !solverRunning.load();
+	bool canSolveIDS = savedCubeState.valid && !isBusy;
 
 	ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.35f, 0.1f, 0.55f, 1.0f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.5f, 0.2f, 0.75f, 1.0f));
@@ -932,6 +943,80 @@ void drawSolverGUI() {
 		}
 	} else {
 		ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Aguardando IDS...");
+	}
+
+	// =========================================================
+	// SECAO: Busca A*
+	// =========================================================
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.25f, 1.0f), "Busca A*");
+	ImGui::Spacing();
+
+	bool canSolveAEstrela = savedCubeState.valid && !isBusy;
+
+	ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.65f, 0.25f, 0.05f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.4f, 0.1f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(1.0f, 0.55f, 0.2f, 1.0f));
+	if (!canSolveAEstrela) ImGui::BeginDisabled();
+	if (ImGui::Button("Resolver A*", ImVec2(-1, 30)) && canSolveAEstrela) {
+		if (g_cubeRef && !solverRunningAEstrela.load()) {
+			std::array<CubeSection, 8> tempCube = *g_cubeRef;
+			for (int i = 0; i < 8; i++) {
+				tempCube[i].left   = savedCubeState.pieces[i].left;
+				tempCube[i].right  = savedCubeState.pieces[i].right;
+				tempCube[i].top    = savedCubeState.pieces[i].top;
+				tempCube[i].bottom = savedCubeState.pieces[i].bottom;
+				tempCube[i].front  = savedCubeState.pieces[i].front;
+				tempCube[i].back   = savedCubeState.pieces[i].back;
+			}
+			EstadoCubo estadoInicial = cubeToEstado(tempCube);
+			solverResultAEstrela = SolverResult{};
+			solverRunningAEstrela.store(true);
+			std::thread([estadoInicial]() {
+				ResultadoBusca res = buscaAEstrela(estadoInicial);
+				solverResultAEstrela.found        = res.encontrou;
+				solverResultAEstrela.nodesVisited = (int)res.estadosVisitados;
+				solverResultAEstrela.moveCount    = (int)res.caminho.size();
+				std::ostringstream oss;
+				for (size_t i = 0; i < res.caminho.size(); i++) {
+					if (i > 0) oss << " ";
+					oss << nomeMovimentoTecla(res.caminho[i]);
+				}
+				solverResultAEstrela.path = oss.str();
+				solverResultAEstrela.ran  = true;
+				solverRunningAEstrela.store(false);
+			}).detach();
+		}
+	}
+	if (!canSolveAEstrela) ImGui::EndDisabled();
+	ImGui::PopStyleColor(3);
+
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	if (solverRunningAEstrela.load()) {
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Buscando com A*...");
+	} else if (solverResultAEstrela.ran) {
+		if (solverResultAEstrela.found) {
+			ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.25f, 1.0f), "Solucao A* encontrada!");
+			ImGui::Text("Nos visitados: %d", solverResultAEstrela.nodesVisited);
+			ImGui::Text("Movimentos: %d", solverResultAEstrela.moveCount);
+			ImGui::Text("Caminho:");
+			const std::string& p3 = solverResultAEstrela.path;
+			const int lineLen3 = 35;
+			for (size_t pos = 0; pos < p3.size(); pos += lineLen3) {
+				ImGui::TextUnformatted(p3.substr(pos, lineLen3).c_str());
+			}
+		} else {
+			ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Sem solucao encontrada pelo A*.");
+			ImGui::Text("Nos visitados: %d", solverResultAEstrela.nodesVisited);
+		}
+	} else {
+		ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Aguardando A*...");
 	}
 
 	ImGui::End();
