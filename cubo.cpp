@@ -835,7 +835,9 @@ void drawSolverGUI() {
   ImGui::Spacing();
 
   // --- Botão: Salvar Estado Atual ---
-  bool isBusy = isShuffling || isPlayingSolution || solverRunning.load();
+  bool isAnySolverRunning = solverRunning.load() || solverRunningIDS.load() ||
+                            solverRunningIDAStar.load();
+  bool isBusy = isShuffling || isPlayingSolution || isAnySolverRunning;
 
   ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.1f, 0.5f, 0.1f, 1.0f));
   ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
@@ -1010,9 +1012,7 @@ void drawSolverGUI() {
                      "Busca em Profundidade (IDDFS)");
   ImGui::Spacing();
 
-  bool isBusyIDS = isShuffling || isPlayingSolution || solverRunningIDS.load();
-  bool canSolveIDS =
-      savedCubeState.valid && !isBusyIDS && !solverRunning.load();
+  bool canSolveIDS = savedCubeState.valid && !isBusy;
 
   ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.1f, 0.55f, 1.0f));
   ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
@@ -1095,10 +1095,7 @@ void drawSolverGUI() {
   ImGui::TextColored(ImVec4(0.9f, 0.5f, 1.0f, 1.0f), "A*");
   ImGui::Spacing();
 
-  bool isBusyAStar =
-      isShuffling || isPlayingSolution || solverRunningIDAStar.load();
-  bool canSolveIDAStar = savedCubeState.valid && !isBusyAStar &&
-                         !solverRunningIDS.load() && !solverRunning;
+  bool canSolveIDAStar = savedCubeState.valid && !isBusy;
 
   ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.11f, 0.16f, 1.0f));
 
@@ -1109,8 +1106,8 @@ void drawSolverGUI() {
                         ImVec4(0.35f, 0.08f, 0.12f, 1.0f));
   if (!canSolveIDAStar)
     ImGui::BeginDisabled();
-  if (ImGui::Button("Resolver por A*", ImVec2(-1, 30)) && canSolveIDS) {
-    if (g_cubeRef && !solverRunningIDS.load()) {
+  if (ImGui::Button("Resolver por A*", ImVec2(-1, 30)) && canSolveIDAStar) {
+    if (g_cubeRef && !solverRunningIDAStar.load()) {
       // Monta estado logico a partir do estado salvo
       std::array<CubeSection, 8> tempCube = *g_cubeRef;
       for (int i = 0; i < 8; i++) {
