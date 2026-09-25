@@ -1,104 +1,94 @@
 #include "a_estrela.h"
-#include "heuristica.h"
+#include "simetria.h"
 
-#include <algorithm>
-#include <utility>
-#include <vector>
+/* ---------------------------------------------------------------
+ * FronteiraIDA -- Implementacao dos metodos da interface Fronteira
+ * usando uma pilha (std::stack) e limite de custo f = g + h.
+ * --------------------------------------------------------------- */
 
-namespace {
-Movimento movimentoInverso(Movimento movimento) {
-  switch (movimento) {
-  case Movimento::U:
-    return Movimento::U_PRIME;
-  case Movimento::U_PRIME:
-    return Movimento::U;
-  case Movimento::D:
-    return Movimento::D_PRIME;
-  case Movimento::D_PRIME:
-    return Movimento::D;
-  case Movimento::L:
-    return Movimento::L_PRIME;
-  case Movimento::L_PRIME:
-    return Movimento::L;
-  case Movimento::R:
-    return Movimento::R_PRIME;
-  case Movimento::R_PRIME:
-    return Movimento::R;
-  case Movimento::F:
-    return Movimento::F_PRIME;
-  case Movimento::F_PRIME:
-    return Movimento::F;
-  case Movimento::B:
-    return Movimento::B_PRIME;
-  case Movimento::B_PRIME:
-    return Movimento::B;
-  default:
-    return Movimento::NENHUM;
+bool FronteiraIDA::adicionar(int indice, const NoBusca &no) {
+  int g = no.profundidade;
+  int h = tabela.h(no.estado);
+  int f = g + h;
+
+  if (f > limiteF) {
+    if (f < proximoLimite) {
+      proximoLimite = f;
+    }
+    return false;
   }
+
+  EstadoCubo canonico = estadoCanonico(no.estado);
+
+  auto it = visitados.find(canonico);
+
+  if (it != visitados.end() && it->second <= g) {
+    return false;
+  }
+
+  visitados[canonico] = g;
+
+  pilha.push(indice);
+
+  return true;
 }
-struct NoPilha {
-  EstadoCubo estado;
-  int g;
-  Movimento ultimoMovimento;
-  std::vector<Movimento> caminho;
-};
-} // namespace
 
-ResultadoBuscaIDA buscaIDAEstrela(const EstadoCubo &inicial) {
+int FronteiraIDA::remover() {
+  int indice = pilha.top();
+
+  pilha.pop();
+
+  return indice;
+}
+
+bool FronteiraIDA::vazia() const { return pilha.empty(); }
+
+void FronteiraIDA::limpar() {
+  while (!pilha.empty()) {
+    pilha.pop();
+  }
+
+  visitados.clear();
+}
+
+int FronteiraIDA::obterProximoLimite() const { return proximoLimite; }
+
+/* ---------------------------------------------------------------
+ * IDDFS -- Iterative Deepening A* Search
+ *
+ * Executa buscarGenerico() com FronteiraIDA.
+ * --------------------------------------------------------------- */
+
+ResultadoBusca buscaIDAEstrela(const EstadoCubo &inicial) {
+  ResultadoBusca acumulado;
+
   static const TabelaDistancias tabela;
-
-  ResultadoBuscaIDA resultado;
 
   int limite = tabela.h(inicial);
 
   while (limite <= PROFUNDIDADE_MAXIMA) {
-    int proximoLimite = PROFUNDIDADE_MAXIMA + 1;
+    FronteiraIDA fronteira(limite, tabela);
 
-    std::vector<NoPilha> pilha;
-    pilha.push_back({inicial, 0, Movimento::NENHUM, {}});
+    ResultadoBusca parcial = buscarGenerico(inicial, fronteira);
 
-    while (!pilha.empty()) {
-      NoPilha no = std::move(pilha.back());
-      pilha.pop_back();
+    acumulado.estadosVisitados += parcial.estadosVisitados;
 
-      resultado.estadosEspandidos++;
+    if (parcial.encontrou) {
+      acumulado.encontrou = true;
+      acumulado.profundidade = parcial.profundidade;
+      acumulado.caminho = parcial.caminho;
 
-      int h = tabela.h(no.estado);
-      int f = no.g + h;
-
-      if (f > limite) {
-        proximoLimite = std::min(proximoLimite, f);
-        continue;
-      }
-
-      if (estadoFinal(no.estado)) {
-        resultado.encontrou = true;
-        resultado.profundidade = no.g;
-        resultado.solucao = std::move(no.caminho);
-        return resultado;
-      }
-
-      for (const auto &sucessor : gerarSucessores(no.estado)) {
-        if (sucessor.second == movimentoInverso(no.ultimoMovimento)) {
-          continue;
-        }
-
-        NoPilha proximo;
-        proximo.estado = sucessor.first;
-        proximo.g = no.g + 1;
-        proximo.ultimoMovimento = sucessor.second;
-        proximo.caminho = no.caminho;
-        proximo.caminho.push_back(sucessor.second);
-
-        pilha.push_back(std::move(proximo));
-      }
+      return acumulado;
     }
 
-    if (proximoLimite > PROFUNDIDADE_MAXIMA) {
+    int proxLim = fronteira.obterProximoLimite();
+
+    if (proxLim > PROFUNDIDADE_MAXIMA) {
       break;
     }
 
-    limite = proximoLimite;
+    limite = proxLim;
   }
-  return resultado;
+
+  return acumulado;
 }

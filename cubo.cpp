@@ -1122,18 +1122,17 @@ void drawSolverGUI() {
       solverResultIDAStar = SolverResult{};
       solverResultIDAStar.ran = false;
       solverRunningIDAStar.store(true);
-      // Executa IDDFS em thread separada
       std::thread([estadoInicial]() {
-        ResultadoBuscaIDA res = buscaIDAEstrela(estadoInicial);
+        ResultadoBusca res = buscaIDAEstrela(estadoInicial);
         solverResultIDAStar.found = res.encontrou;
-        solverResultIDAStar.nodesVisited = (int)res.estadosEspandidos;
-        solverResultIDAStar.moveCount = (int)res.solucao.size();
+        solverResultIDAStar.nodesVisited = (int)res.estadosVisitados;
+        solverResultIDAStar.moveCount = (int)res.caminho.size();
         // Monta caminho com notacao de 2 letras
         std::ostringstream oss;
-        for (size_t i = 0; i < res.solucao.size(); i++) {
+        for (size_t i = 0; i < res.caminho.size(); i++) {
           if (i > 0)
             oss << " ";
-          oss << nomeMovimentoTecla(res.solucao[i]);
+          oss << nomeMovimentoTecla(res.caminho[i]);
         }
         solverResultIDAStar.path = oss.str();
         solverResultIDAStar.ran = true;
